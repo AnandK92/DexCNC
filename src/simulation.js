@@ -685,42 +685,59 @@ export class CNCSimulator3D {
       }
     }
 
+    // Helper to determine if station i was machined by the tool at angle j
+    const isStationCut = (i, j) => {
+      return radii[i] < 9000 && radii[i] <= rBoxTable[j] + 0.05;
+    };
+
+    // Helper to calculate effective radius at (station i, angle j)
+    const getEffectiveRadius = (i, j) => {
+      if (isStationCut(i, j)) {
+        return Math.min(radii[i], rBoxTable[j]);
+      }
+      return rBoxTable[j];
+    };
+
     // Helper to calculate exact vertex position at (station i, angle j)
-    const getPoint = (i, j) => {
+    const getPoint = (i, j, overrideRadius) => {
       const z = -i * res + offsetZ;
-      const cutR = radii[i];
-      if (cutR >= rBoxTable[j]) {
-        // Uncut raw stock: exact planar flat face coordinates
+      if (overrideRadius !== undefined) {
+        return [z, overrideRadius * cosTable[j] + offsetY, overrideRadius * sinTable[j] + offsetX];
+      }
+      if (!isStationCut(i, j)) {
         return [z, boxY[j] + offsetY, boxX[j] + offsetX];
       }
-      // Cut turned surface: exact cylinder coordinates
-      return [z, cutR * cosTable[j] + offsetY, cutR * sinTable[j] + offsetX];
+      const r = getEffectiveRadius(i, j);
+      return [z, r * cosTable[j] + offsetY, r * sinTable[j] + offsetX];
     };
 
     // Precompute smooth central-difference radial slopes at each station
     const nxTable = new Float32Array(n);
     const radScaleTable = new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      const prevR = radii[Math.max(0, i - 1)];
-      const nextR = radii[Math.min(n - 1, i + 1)];
+      const prevR = getEffectiveRadius(Math.max(0, i - 1), 0);
+      const curR = getEffectiveRadius(i, 0);
+      const nextR = getEffectiveRadius(Math.min(n - 1, i + 1), 0);
       let dr = 0;
-      if (Math.abs(radii[i] - prevR) < 1.0 && Math.abs(nextR - radii[i]) < 1.0) {
+      // Only smooth across gradual slopes (< 0.25mm per station); sharp steps don't smooth into cylindrical faces
+      if (Math.abs(curR - prevR) < 0.25 && Math.abs(nextR - curR) < 0.25) {
         dr = (nextR - prevR) / (2 * res);
-      } else if (Math.abs(nextR - radii[i]) < 1.0) {
-        dr = (nextR - radii[i]) / res;
-      } else if (Math.abs(radii[i] - prevR) < 1.0) {
-        dr = (radii[i] - prevR) / res;
+      } else if (Math.abs(nextR - curR) < 0.25) {
+        dr = (nextR - curR) / res;
+      } else if (Math.abs(curR - prevR) < 0.25) {
+        dr = (curR - prevR) / res;
       }
       nxTable[i] = -dr / Math.sqrt(1 + dr * dr);
       radScaleTable[i] = 1 / Math.sqrt(1 + dr * dr);
     }
 
     // Helper to evaluate continuous color and normal at any vertex (station i, angle j)
-    const getVertexData = (i, j) => {
-      const isCut = radii[i] < rBoxTable[j] - 0.03;
+    const getVertexData = (i, j, overrideRadius) => {
+      const cut = isStationCut(i, j);
       let col, norm;
-      if (isCut) {
-        const depthRatio = Math.min(1, Math.max(0, (rBoxTable[j] - radii[i]) / Math.max(rBoxTable[j], 1)));
+      if (cut) {
+        const effR = overrideRadius !== undefined ? overrideRadius : getEffectiveRadius(i, j);
+        const depthRatio = Math.min(1, Math.max(0, (rBoxTable[j] - effR) / Math.max(rBoxTable[j], 1)));
         col = getMachinedColor(depthRatio);
         norm = [nxTable[i], cosTable[j] * radScaleTable[i], sinTable[j] * radScaleTable[i]];
       } else {
@@ -730,29 +747,97 @@ export class CNCSimulator3D {
       return { col, norm };
     };
 
-    // 1. Generate side quad triangles
+    // 1. Generate side quad triangles with split vertical shoulders
     for (let i = 0; i < n - 1; i++) {
-      for (let j = 0; j < nTheta; j++) {
-        const nextJ = (j + 1) % nTheta;
+      const r0 = getEffectiveRadius(i, 0);
+      const r1 = getEffectiveRadius(i + 1, 0);
+      const diff = r1 - r0;
 
-        const p00 = getPoint(i, j);
-        const p10 = getPoint(i + 1, j);
-        const p11 = getPoint(i + 1, nextJ);
-        const p01 = getPoint(i, nextJ);
+      if (Math.abs(diff) < 0.25) {
+        // Continuous smooth cylinder or taper
+        for (let j = 0; j < nTheta; j++) {
+          const nextJ = (j + 1) % nTheta;
 
-        const v00 = getVertexData(i, j);
-        const v10 = getVertexData(i + 1, j);
-        const v11 = getVertexData(i + 1, nextJ);
-        const v01 = getVertexData(i, nextJ);
+          const p00 = getPoint(i, j);
+          const p10 = getPoint(i + 1, j);
+          const p11 = getPoint(i + 1, nextJ);
+          const p01 = getPoint(i, nextJ);
 
-        addTri(p00, p10, p11, v00.col, v10.col, v11.col, v00.norm, v10.norm, v11.norm);
-        addTri(p00, p11, p01, v00.col, v11.col, v01.col, v00.norm, v11.norm, v01.norm);
+          const v00 = getVertexData(i, j);
+          const v10 = getVertexData(i + 1, j);
+          const v11 = getVertexData(i + 1, nextJ);
+          const v01 = getVertexData(i, nextJ);
+
+          addTri(p00, p10, p11, v00.col, v10.col, v11.col, v00.norm, v10.norm, v11.norm);
+          addTri(p00, p11, p01, v00.col, v11.col, v01.col, v00.norm, v11.norm, v01.norm);
+        }
+      } else if (diff > 0) {
+        // Step UP (expanding diameter towards chuck, e.g. X20 -> X25)
+        // Cylinder of smaller radius r0 runs up to z1
+        const z0 = -i * res + offsetZ;
+        const z1 = -(i + 1) * res + offsetZ;
+        const vCyl = getVertexData(i, 0, r0);
+
+        for (let j = 0; j < nTheta; j++) {
+          const nextJ = (j + 1) % nTheta;
+
+          const p00 = [z0, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX];
+          const p10 = [z1, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX];
+          const p11 = [z1, r0 * cosTable[nextJ] + offsetY, r0 * sinTable[nextJ] + offsetX];
+          const p01 = [z0, r0 * cosTable[nextJ] + offsetY, r0 * sinTable[nextJ] + offsetX];
+          const n0 = [0, cosTable[j], sinTable[j]];
+          const n1 = [0, cosTable[nextJ], sinTable[nextJ]];
+
+          addTri(p00, p10, p11, vCyl.col, vCyl.col, vCyl.col, n0, n0, n1);
+          addTri(p00, p11, p01, vCyl.col, vCyl.col, vCyl.col, n0, n1, n1);
+
+          // Flat vertical shoulder at z1 facing +Z (front)
+          const pIn0 = [z1, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX];
+          const pOut0 = [z1, r1 * cosTable[j] + offsetY, r1 * sinTable[j] + offsetX];
+          const pIn1 = [z1, r0 * cosTable[nextJ] + offsetY, r0 * sinTable[nextJ] + offsetX];
+          const pOut1 = [z1, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX];
+          const nShoulder = [1, 0, 0];
+          const cShoulder = getMachinedColor(0.18);
+
+          addTri(pIn0, pOut0, pOut1, cShoulder, cShoulder, cShoulder, nShoulder, nShoulder, nShoulder);
+          addTri(pIn0, pOut1, pIn1, cShoulder, cShoulder, cShoulder, nShoulder, nShoulder, nShoulder);
+        }
+      } else {
+        // Step DOWN (contracting diameter towards chuck)
+        const z0 = -i * res + offsetZ;
+        const z1 = -(i + 1) * res + offsetZ;
+        const vCyl = getVertexData(i + 1, 0, r1);
+
+        for (let j = 0; j < nTheta; j++) {
+          const nextJ = (j + 1) % nTheta;
+
+          // Flat vertical shoulder at z0 facing -Z (back)
+          const pIn0 = [z0, r1 * cosTable[j] + offsetY, r1 * sinTable[j] + offsetX];
+          const pOut0 = [z0, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX];
+          const pIn1 = [z0, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX];
+          const pOut1 = [z0, r0 * cosTable[nextJ] + offsetY, r0 * sinTable[nextJ] + offsetX];
+          const nShoulder = [-1, 0, 0];
+          const cShoulder = getMachinedColor(0.18);
+
+          addTri(pIn0, pOut1, pOut0, cShoulder, cShoulder, cShoulder, nShoulder, nShoulder, nShoulder);
+          addTri(pIn0, pIn1, pOut1, cShoulder, cShoulder, cShoulder, nShoulder, nShoulder, nShoulder);
+
+          // Cylinder of smaller radius r1 runs from z0 to z1
+          const p00 = [z0, r1 * cosTable[j] + offsetY, r1 * sinTable[j] + offsetX];
+          const p10 = [z1, r1 * cosTable[j] + offsetY, r1 * sinTable[j] + offsetX];
+          const p11 = [z1, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX];
+          const p01 = [z0, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX];
+          const n0 = [0, cosTable[j], sinTable[j]];
+          const n1 = [0, cosTable[nextJ], sinTable[nextJ]];
+
+          addTri(p00, p10, p11, vCyl.col, vCyl.col, vCyl.col, n0, n0, n1);
+          addTri(p00, p11, p01, vCyl.col, vCyl.col, vCyl.col, n0, n1, n1);
+        }
       }
     }
 
     // 2. Front cap at z=offsetZ (station 0) - Flat planar facing normal [1, 0, 0]
-    const cutR0 = radii[0];
-    const isFrontCut = cutR0 < Math.min(halfW, halfH) - 0.03;
+    const isFrontCut = isStationCut(0, 0);
     const cFront = isFrontCut ? getMachinedColor(0.2) : cUncut;
     const nFront = [1, 0, 0];
     const pCenterFront = [offsetZ, offsetY, offsetX];
@@ -794,20 +879,27 @@ export class CNCSimulator3D {
       addEdgeLine(p0, p1);
     }
 
-    // Circular ring outlines on turned steps / sharp shoulders:
+    // Circular ring outlines on turned steps / sharp shoulders (Inner & Outer rings):
     for (let i = 0; i < n - 1; i++) {
-      const diff = Math.abs(radii[i] - radii[i + 1]);
-      if (diff > Math.max(res * 1.5, 0.75)) {
-        const stepZ = -(i + 1) * res + offsetZ;
-        const stepR = Math.min(radii[i], radii[i + 1]);
+      const r0 = getEffectiveRadius(i, 0);
+      const r1 = getEffectiveRadius(i + 1, 0);
+      const diff = r1 - r0;
+      if (Math.abs(diff) >= 0.25) {
+        const stepZ = (diff > 0 ? -(i + 1) : -i) * res + offsetZ;
+        const rMin = Math.min(r0, r1);
+        const rMax = Math.max(r0, r1);
         for (let j = 0; j < nTheta; j++) {
           const nextJ = (j + 1) % nTheta;
-          if (stepR < rBoxTable[j] - 0.25 && stepR < rBoxTable[nextJ] - 0.25) {
-            addEdgeLine(
-              [stepZ, stepR * cosTable[j] + offsetY, stepR * sinTable[j] + offsetX],
-              [stepZ, stepR * cosTable[nextJ] + offsetY, stepR * sinTable[nextJ] + offsetX]
-            );
-          }
+          // Inner circular edge ring
+          addEdgeLine(
+            [stepZ, rMin * cosTable[j] + offsetY, rMin * sinTable[j] + offsetX],
+            [stepZ, rMin * cosTable[nextJ] + offsetY, rMin * sinTable[nextJ] + offsetX]
+          );
+          // Outer circular edge ring
+          addEdgeLine(
+            [stepZ, rMax * cosTable[j] + offsetY, rMax * sinTable[j] + offsetX],
+            [stepZ, rMax * cosTable[nextJ] + offsetY, rMax * sinTable[nextJ] + offsetX]
+          );
         }
       }
     }
@@ -818,8 +910,8 @@ export class CNCSimulator3D {
 
       for (const cj of cornerIndices) {
         for (let i = 0; i < n - 1; i++) {
-          const isCut0 = radii[i] < rBoxTable[cj] - 0.05;
-          const isCut1 = radii[i + 1] < rBoxTable[cj] - 0.05;
+          const isCut0 = isStationCut(i, cj);
+          const isCut1 = isStationCut(i + 1, cj);
           if (!isCut0 && !isCut1) {
             const z0 = -i * res + offsetZ;
             const z1 = -(i + 1) * res + offsetZ;
