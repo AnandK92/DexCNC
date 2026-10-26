@@ -435,7 +435,7 @@ export class CNCSimulator3D {
       // Tool Mesh: Carbide insert holder
       this.createLatheToolMesh();
 
-      const maxDim = Math.max(this.blank.w || this.blank.d || 80, this.blank.h || this.blank.d || 80, this.blank.l);
+      const maxDim = Math.max(this.blank.w || this.blank.d || 100, this.blank.h || this.blank.d || 100, this.blank.l || 100);
       this.target.set(-this.blank.l / 2, 0, 0);
       this.distance = maxDim * 2.3;
       this.setView('front');
@@ -572,8 +572,8 @@ export class CNCSimulator3D {
   updateTurnMesh() {
     if (!this.turnStock || !this.stockMesh) return;
     const { res, n, radii } = this.turnStock;
-    const halfW = (this.blank.w || this.blank.d || 80) / 2;
-    const halfH = (this.blank.h || this.blank.thickness || this.blank.d || 80) / 2;
+    const halfW = (this.blank.w || this.blank.d || 100) / 2;
+    const halfH = (this.blank.h || this.blank.thickness || this.blank.d || 100) / 2;
 
     const offsetX = this.blank.centerX || 0;
     const offsetY = this.blank.centerY || 0;

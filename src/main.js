@@ -305,26 +305,45 @@ class AppState {
     this.currentFileName = 'Untitled.nc';
     this.isModified = false;
     this.autoSaveEnabled = localStorage.getItem('cnc_autosave') !== 'false';
-    this.blank = {
-      w: 80,
-      h: 80,
-      d: 80,
+
+    // Standard 100mm x 100mm Blank for Turning (100mm x 100mm x 100mm Length)
+    this.turnBlank = {
+      w: 100,
+      h: 100,
+      d: 100,
       l: 100,
-      thickness: 80,
+      thickness: 100,
       bore: 0,
       centerX: 0,
       centerY: 0,
-      centerZ: 0,
-      x: 100,
-      y: 80,
-      z: 20
+      centerZ: 0
     };
+
+    // Standard 100mm x 100mm Blank for Milling (100mm x 100mm x 25mm Depth)
+    this.millBlank = {
+      x: 100,
+      y: 100,
+      z: 25,
+      w: 100,
+      h: 100,
+      d: 25,
+      thickness: 25,
+      bore: 0,
+      centerX: 0,
+      centerY: 0,
+      centerZ: 0
+    };
+
     this.tools = createDefaultTurret();
     this.toolsList = [...DEFAULT_42_TOOLS];
     this.activeTab = 'sim'; // 'sim' or 'err'
     this.currentErrors = [];
     this.compiledSteps = [];
     this.totalTime = 0;
+  }
+
+  get blank() {
+    return this.mode === 'turn' ? this.turnBlank : this.millBlank;
   }
 }
 
