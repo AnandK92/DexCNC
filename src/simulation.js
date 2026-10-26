@@ -569,8 +569,20 @@ export class CNCSimulator3D {
     const nTheta = 72; // 72 angular steps (5° steps for crisp cylinder & cuboid faces)
     const P = [];
     const C = [];
+    const N = [];
     const L = []; // Line segments for CAD boundary edges
-    const idx = (station, ang) => station * nTheta + ang;
+
+    const addVert = (p, c, norm) => {
+      P.push(p[0], p[1], p[2]);
+      C.push(c[0], c[1], c[2]);
+      N.push(norm[0], norm[1], norm[2]);
+    };
+
+    const addTri = (p0, p1, p2, c0, c1, c2, n0, n1, n2) => {
+      addVert(p0, c0, n0);
+      addVert(p1, c1, n1);
+      addVert(p2, c2, n2);
+    };
 
     const addEdgeLine = (p1, p2) => {
       L.push(p1[0], p1[1], p1[2]);
@@ -605,93 +617,99 @@ export class CNCSimulator3D {
       sinTable[j] = sin;
     }
 
-    // 1. Generate ring vertices & vertex colors for all Z stations
-    for (let i = 0; i < n; i++) {
+    // Helper to calculate exact vertex position at (station i, angle j)
+    const getPoint = (i, j) => {
       const z = -i * res + offsetZ;
       const cutR = radii[i];
+      const r = Math.min(rBoxTable[j], cutR);
+      return [z, r * cosTable[j] + offsetY, r * sinTable[j] + offsetX];
+    };
+
+    // 1. Generate side quad triangles with split planar normals on uncut stock & smooth normals on turned parts
+    for (let i = 0; i < n - 1; i++) {
       for (let j = 0; j < nTheta; j++) {
-        const rRaw = rBoxTable[j];
-        const isCut = cutR < rRaw - 0.03;
-        const r = Math.min(rRaw, cutR);
+        const nextJ = (j + 1) % nTheta;
 
-        // Spindle axis is X = z (machine Z), Y = r*cos, Z = r*sin
-        P.push(z, r * cosTable[j] + offsetY, r * sinTable[j] + offsetX);
+        const p00 = getPoint(i, j);
+        const p10 = getPoint(i + 1, j);
+        const p11 = getPoint(i + 1, nextJ);
+        const p01 = getPoint(i, nextJ);
 
-        if (isCut) {
-          const depthRatio = Math.min(1, Math.max(0, (rRaw - cutR) / Math.max(rRaw, 1)));
-          const [cr, cg, cb] = getMachinedColor(depthRatio);
-          C.push(cr, cg, cb);
+        const isCut0 = radii[i] < rBoxTable[j] - 0.03;
+        const isCut1 = radii[i + 1] < rBoxTable[j] - 0.03;
+        const isCutNext0 = radii[i] < rBoxTable[nextJ] - 0.03;
+        const isCutNext1 = radii[i + 1] < rBoxTable[nextJ] - 0.03;
+        const isAnyCut = isCut0 || isCut1 || isCutNext0 || isCutNext1;
+
+        if (isAnyCut) {
+          // Turned cylindrical / conical surface: smooth radial cylinder normals
+          const depthRatio = Math.min(1, Math.max(0, (rBoxTable[j] - Math.min(radii[i], radii[i + 1])) / Math.max(rBoxTable[j], 1)));
+          const col = getMachinedColor(depthRatio);
+
+          const dr0 = (radii[i + 1] - radii[i]) / res;
+          const nx0 = -dr0 / Math.sqrt(1 + dr0 * dr0);
+          const radScale0 = 1 / Math.sqrt(1 + dr0 * dr0);
+
+          const n00 = [nx0, cosTable[j] * radScale0, sinTable[j] * radScale0];
+          const n10 = [nx0, cosTable[j] * radScale0, sinTable[j] * radScale0];
+          const n01 = [nx0, cosTable[nextJ] * radScale0, sinTable[nextJ] * radScale0];
+          const n11 = [nx0, cosTable[nextJ] * radScale0, sinTable[nextJ] * radScale0];
+
+          addTri(p00, p10, p11, col, col, col, n00, n10, n11);
+          addTri(p00, p11, p01, col, col, col, n00, n11, n01);
         } else {
-          C.push(cUncut[0], cUncut[1], cUncut[2]);
+          // Uncut raw rectangular stock: Planar normal based on the active face (preserves razor-sharp 90° corners)
+          const midTheta = ((j + 0.5) * 2 * Math.PI) / nTheta;
+          const midCos = Math.cos(midTheta);
+          const midSin = Math.sin(midTheta);
+
+          let faceNorm;
+          if (Math.abs(midCos) >= Math.abs(midSin)) {
+            faceNorm = midCos > 0 ? [0, 1, 0] : [0, -1, 0]; // Top or Bottom flat face
+          } else {
+            faceNorm = midSin > 0 ? [0, 0, 1] : [0, 0, -1]; // Front or Back flat side
+          }
+
+          addTri(p00, p10, p11, cUncut, cUncut, cUncut, faceNorm, faceNorm, faceNorm);
+          addTri(p00, p11, p01, cUncut, cUncut, cUncut, faceNorm, faceNorm, faceNorm);
         }
       }
     }
 
-    const indices = [];
-
-    // 2. Generate side quad triangles
-    for (let i = 0; i < n - 1; i++) {
-      for (let j = 0; j < nTheta; j++) {
-        const nextJ = (j + 1) % nTheta;
-        const v00 = idx(i, j);
-        const v10 = idx(i + 1, j);
-        const v11 = idx(i + 1, nextJ);
-        const v01 = idx(i, nextJ);
-
-        indices.push(v00, v10, v11);
-        indices.push(v00, v11, v01);
-      }
-    }
-
-    // 3. Front cap at z=offsetZ (station 0) - Crisp planar facing with sharp normal
-    const frontCenterIdx = P.length / 3;
-    P.push(offsetZ, offsetY, offsetX);
+    // 2. Front cap at z=offsetZ (station 0) - Flat planar facing normal [1, 0, 0]
     const cutR0 = radii[0];
     const isFrontCut = cutR0 < halfW - 0.03;
-    if (isFrontCut) {
-      const [cr, cg, cb] = getMachinedColor(0.2);
-      C.push(cr, cg, cb);
-    } else {
-      C.push(cUncut[0], cUncut[1], cUncut[2]);
-    }
+    const cFront = isFrontCut ? getMachinedColor(0.2) : cUncut;
+    const nFront = [1, 0, 0];
+    const pCenterFront = [offsetZ, offsetY, offsetX];
 
-    const frontRingStart = P.length / 3;
-    for (let j = 0; j < nTheta; j++) {
-      const r = Math.min(rBoxTable[j], cutR0);
-      P.push(offsetZ, r * cosTable[j] + offsetY, r * sinTable[j] + offsetX);
-      if (isFrontCut) {
-        const [cr, cg, cb] = getMachinedColor(0.2);
-        C.push(cr, cg, cb);
-      } else {
-        C.push(cUncut[0], cUncut[1], cUncut[2]);
-      }
-    }
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
-      indices.push(frontCenterIdx, frontRingStart + nextJ, frontRingStart + j);
+      const r0 = Math.min(rBoxTable[j], cutR0);
+      const r1 = Math.min(rBoxTable[nextJ], cutR0);
+      const p0 = [offsetZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX];
+      const p1 = [offsetZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX];
+      addTri(pCenterFront, p1, p0, cFront, cFront, cFront, nFront, nFront, nFront);
     }
 
-    // 4. Back cap at z=backZ (station n-1)
+    // 3. Back cap at z=backZ (station n-1) - Flat planar normal [-1, 0, 0]
     const backZ = -(n - 1) * res + offsetZ;
-    const backCenterIdx = P.length / 3;
-    P.push(backZ, offsetY, offsetX);
-    const cBack = [0.55, 0.60, 0.66];
-    C.push(cBack[0], cBack[1], cBack[2]);
-
     const cutRLast = radii[n - 1];
-    const backRingStart = P.length / 3;
-    for (let j = 0; j < nTheta; j++) {
-      const r = Math.min(rBoxTable[j], cutRLast);
-      P.push(backZ, r * cosTable[j] + offsetY, r * sinTable[j] + offsetX);
-      C.push(cBack[0], cBack[1], cBack[2]);
-    }
+    const cBack = [0.55, 0.60, 0.66];
+    const nBack = [-1, 0, 0];
+    const pCenterBack = [backZ, offsetY, offsetX];
+
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
-      indices.push(backCenterIdx, backRingStart + j, backRingStart + nextJ);
+      const r0 = Math.min(rBoxTable[j], cutRLast);
+      const r1 = Math.min(rBoxTable[nextJ], cutRLast);
+      const p0 = [backZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX];
+      const p1 = [backZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX];
+      addTri(pCenterBack, p0, p1, cBack, cBack, cBack, nBack, nBack, nBack);
     }
 
-    // 5. CAD Edge Lines for Turning (SolidWorks "Shaded with Edges" style)
-    // Front circular face rim
+    // 4. CAD Edge Lines for Turning (SolidWorks "Shaded with Edges" style)
+    // Front face rim
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
       const r0 = Math.min(rBoxTable[j], cutR0);
@@ -702,7 +720,7 @@ export class CNCSimulator3D {
       );
     }
 
-    // Back circular face rim
+    // Back face rim
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
       const r0 = Math.min(rBoxTable[j], cutRLast);
@@ -731,31 +749,59 @@ export class CNCSimulator3D {
       }
     }
 
-    // Longitudinal profile silhouettes along top (angle 0) and bottom (angle nTheta/2)
-    const jTop = 0;
-    const jBot = Math.floor(nTheta / 2);
+    // Four longitudinal CAD corner edges of the rectangular stock (at 45°, 135°, 225°, 315°)
+    const cornerIndices = [
+      Math.round(nTheta * 1 / 8), // 45°
+      Math.round(nTheta * 3 / 8), // 135°
+      Math.round(nTheta * 5 / 8), // 225°
+      Math.round(nTheta * 7 / 8)  // 315°
+    ];
+
+    for (const cj of cornerIndices) {
+      for (let i = 0; i < n - 1; i++) {
+        const isCut0 = radii[i] < rBoxTable[cj] - 0.05;
+        const isCut1 = radii[i + 1] < rBoxTable[cj] - 0.05;
+        if (!isCut0 && !isCut1) {
+          const z0 = -i * res + offsetZ;
+          const z1 = -(i + 1) * res + offsetZ;
+          const r0 = rBoxTable[cj];
+          const r1 = rBoxTable[cj];
+          addEdgeLine(
+            [z0, r0 * cosTable[cj] + offsetY, r0 * sinTable[cj] + offsetX],
+            [z1, r1 * cosTable[cj] + offsetY, r1 * sinTable[cj] + offsetX]
+          );
+        }
+      }
+    }
+
+    // Turned cylinder profile silhouettes (top & bottom generators) wherever cut
+    const jApexTop = 0;
+    const jApexBot = Math.floor(nTheta / 2);
     for (let i = 0; i < n - 1; i++) {
-      const z0 = -i * res + offsetZ;
-      const z1 = -(i + 1) * res + offsetZ;
-      const rTop0 = Math.min(rBoxTable[jTop], radii[i]);
-      const rTop1 = Math.min(rBoxTable[jTop], radii[i + 1]);
-      addEdgeLine(
-        [z0, rTop0 * cosTable[jTop] + offsetY, rTop0 * sinTable[jTop] + offsetX],
-        [z1, rTop1 * cosTable[jTop] + offsetY, rTop1 * sinTable[jTop] + offsetX]
-      );
-      const rBot0 = Math.min(rBoxTable[jBot], radii[i]);
-      const rBot1 = Math.min(rBoxTable[jBot], radii[i + 1]);
-      addEdgeLine(
-        [z0, rBot0 * cosTable[jBot] + offsetY, rBot0 * sinTable[jBot] + offsetX],
-        [z1, rBot1 * cosTable[jBot] + offsetY, rBot1 * sinTable[jBot] + offsetX]
-      );
+      const isCutTop = radii[i] < rBoxTable[jApexTop] - 0.05;
+      if (isCutTop) {
+        const z0 = -i * res + offsetZ;
+        const z1 = -(i + 1) * res + offsetZ;
+        addEdgeLine(
+          [z0, radii[i] * cosTable[jApexTop] + offsetY, radii[i] * sinTable[jApexTop] + offsetX],
+          [z1, radii[i + 1] * cosTable[jApexTop] + offsetY, radii[i + 1] * sinTable[jApexTop] + offsetX]
+        );
+      }
+      const isCutBot = radii[i] < rBoxTable[jApexBot] - 0.05;
+      if (isCutBot) {
+        const z0 = -i * res + offsetZ;
+        const z1 = -(i + 1) * res + offsetZ;
+        addEdgeLine(
+          [z0, radii[i] * cosTable[jApexBot] + offsetY, radii[i] * sinTable[jApexBot] + offsetX],
+          [z1, radii[i + 1] * cosTable[jApexBot] + offsetY, radii[i + 1] * sinTable[jApexBot] + offsetX]
+        );
+      }
     }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
 
     this.stockMesh.geometry.dispose();
     this.stockMesh.geometry = geo;
