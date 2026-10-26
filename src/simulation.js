@@ -370,42 +370,51 @@ export class CNCSimulator3D {
       side: THREE.DoubleSide
     });
 
-    // Mill material: Precision-machined industrial steel/aluminum blue-gray (matching genuine seeNC)
+    // Mill material: Precision-machined industrial steel/aluminum with vertex colors for cut contrast
     const millStockMat = new THREE.MeshStandardMaterial({
-      color: 0x7695a8,        // Industrial CNC blue-gray cold-rolled steel/aluminum
-      roughness: 0.48,        // Semi-matte precision machined surface
-      metalness: 0.28,        // Authentic metallic sheen without plastic gloss
+      roughness: 0.45,
+      metalness: 0.28,
+      vertexColors: true,
       side: THREE.DoubleSide
     });
 
     // Configure lighting specifically for current mode
     if (this.mode === 'mill') {
-      if (this.cyanAmb) this.cyanAmb.intensity = 0.0; // Remove neon cyan wash
-      if (this.amb) this.amb.intensity = 0.65;
+      if (this.cyanAmb) this.cyanAmb.intensity = 0.0;
+      if (this.cameraLight) this.cameraLight.intensity = 0.0; // Turn off headlamp to prevent angle-dependent glare
+      if (this.amb) this.amb.intensity = 0.70;
+
+      // Studio Fixed Key Light (Top-Right-Front in world space)
       if (this.keyLight) {
         this.keyLight.color.setHex(0xffffff);
-        this.keyLight.intensity = 1.25;
-        this.keyLight.position.set(180, 280, 160);
+        this.keyLight.intensity = 1.10;
+        this.keyLight.position.set(160, 320, 180);
       }
+      // Studio Fixed Fill Light (Top-Left-Back in world space)
       if (this.fillLight) {
-        this.fillLight.color.setHex(0xdceef8);
-        this.fillLight.intensity = 0.45;
-        this.fillLight.position.set(-120, 140, -100);
+        this.fillLight.color.setHex(0xdbeafe);
+        this.fillLight.intensity = 0.50;
+        this.fillLight.position.set(-160, 220, -140);
       }
+      // Top overhead light for constant cavity illumination
       if (this.rimLight) {
-        this.rimLight.color.setHex(0xa8d0e6);
-        this.rimLight.intensity = 0.35;
+        this.rimLight.color.setHex(0xffffff);
+        this.rimLight.intensity = 0.40;
+        this.rimLight.position.set(0, 380, 0);
       }
     } else {
+      if (this.cameraLight) this.cameraLight.intensity = 0.85;
       if (this.cyanAmb) this.cyanAmb.intensity = 0.55;
       if (this.amb) this.amb.intensity = 0.85;
       if (this.fillLight) {
         this.fillLight.color.setHex(0x38e8ff);
         this.fillLight.intensity = 0.5;
+        this.fillLight.position.set(100, -150, 120);
       }
       if (this.rimLight) {
         this.rimLight.color.setHex(0x70f5ff);
         this.rimLight.intensity = 0.5;
+        this.rimLight.position.set(-200, 180, -150);
       }
     }
 
@@ -540,25 +549,17 @@ export class CNCSimulator3D {
     }
     const group = new THREE.Group();
 
-    // Spindle Chuck / Arbor Collar (Industrial dark tool steel)
-    const holderGeo = new THREE.CylinderGeometry(11, 7.5, 18, 32);
-    const holderMat = new THREE.MeshStandardMaterial({ color: 0x374151, metalness: 0.8, roughness: 0.35 });
-    const holder = new THREE.Mesh(holderGeo, holderMat);
-    holder.position.y = 28;
-    group.add(holder);
-
-    // Tool Shank (Polished tool steel)
-    const shankGeo = new THREE.CylinderGeometry(toolRadius, toolRadius, 14, 32);
-    const shankMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af, metalness: 0.85, roughness: 0.25 });
-    const shank = new THREE.Mesh(shankGeo, shankMat);
-    shank.position.y = 17;
-    group.add(shank);
-
-    // Carbide Cutter Body (Gold / Brass TiN coating matching genuine seeNC)
-    const cutterGeo = new THREE.CylinderGeometry(toolRadius, toolRadius, 20, 32);
-    const cutterMat = new THREE.MeshStandardMaterial({ color: 0xc89632, metalness: 0.75, roughness: 0.30 });
+    // Pure Standalone Cylindrical Cutting Tool (matching genuine seeNC)
+    // No bulky shoulder or spindle collar obstructing the view
+    const cutterLength = 36;
+    const cutterGeo = new THREE.CylinderGeometry(toolRadius, toolRadius, cutterLength, 32);
+    const cutterMat = new THREE.MeshStandardMaterial({
+      color: 0xc89632,        // Rich golden carbide (TiN coated)
+      metalness: 0.78,
+      roughness: 0.28
+    });
     const cutter = new THREE.Mesh(cutterGeo, cutterMat);
-    cutter.position.y = 10; // Tip of cutter sits at y = 0
+    cutter.position.y = cutterLength / 2; // Tip sits exactly at y = 0
     group.add(cutter);
 
     this.toolMesh = group;
@@ -674,19 +675,44 @@ export class CNCSimulator3D {
     const { nx, ny, res, heights } = this.millStock;
     const B = this.blank;
     const P = [];
+    const C = [];
+    const L = []; // Line segments for CAD boundary edges
 
     const getX = (i) => Math.min(i * res, B.x);
     const getY = (j) => Math.min(j * res, B.y);
     const floorZ = -B.z;
 
-    const addVert = (pt) => P.push(pt[0], pt[2], -pt[1]);
-    const addTri = (a, b, c) => {
-      addVert(a); addVert(b); addVert(c);
+    const addVert = (pt, cr, cg, cb) => {
+      P.push(pt[0], pt[2], -pt[1]);
+      C.push(cr, cg, cb);
     };
-    const addQuad = (a, b, c, d) => {
-      addTri(a, b, c);
-      addTri(a, c, d);
+    const addTri = (a, b, c, cr, cg, cb) => {
+      addVert(a, cr, cg, cb);
+      addVert(b, cr, cg, cb);
+      addVert(c, cr, cg, cb);
     };
+    const addQuad = (a, b, c, d, cr, cg, cb) => {
+      addTri(a, b, c, cr, cg, cb);
+      addTri(a, c, d, cr, cg, cb);
+    };
+    const addEdgeLine = (p1, p2) => {
+      L.push(p1[0], p1[2], -p1[1]);
+      L.push(p2[0], p2[2], -p2[1]);
+    };
+
+    // Color definitions (RGB in 0..1):
+    // Uncut top stock surface (slate blue-gray)
+    const cUncut = [0.42, 0.54, 0.62];
+    // Machined pocket floor (freshly cut bright metallic toolpath sheen with cavity depth shading)
+    const getMachinedFloorColor = (h) => {
+      const depthRatio = Math.min(1, Math.abs(h) / Math.max(B.z, 1));
+      const factor = 1.0 - depthRatio * 0.20;
+      return [0.58 * factor, 0.70 * factor, 0.79 * factor];
+    };
+    // Vertical machined cut wall
+    const cWall = [0.30, 0.42, 0.50];
+    // Exterior side/bottom stock faces
+    const cExt = [0.36, 0.47, 0.54];
 
     // 1. Horizontal surfaces: Each grid cell is drawn flat at its own height (with split normals)
     // Vertical 90-degree step walls are explicitly created at every height change
@@ -699,8 +725,12 @@ export class CNCSimulator3D {
         const idx = j * nx + i;
         const h = heights[idx];
 
+        // Is this cell raw uncut stock or a machined cut?
+        const isCut = h < -0.001;
+        const [cr, cg, cb] = isCut ? getMachinedFloorColor(h) : cUncut;
+
         // Horizontal flat face for this cell
-        addQuad([x0, y0, h], [x1, y0, h], [x1, y1, h], [x0, y1, h]);
+        addQuad([x0, y0, h], [x1, y0, h], [x1, y1, h], [x0, y1, h], cr, cg, cb);
 
         // Vertical step wall in +X direction (between this cell and right neighbor)
         if (i < nx - 2) {
@@ -708,10 +738,12 @@ export class CNCSimulator3D {
           const diff = h - hRight;
           if (diff > 0.001) {
             // Step down to the right (faces +X)
-            addQuad([x1, y0, h], [x1, y1, h], [x1, y1, hRight], [x1, y0, hRight]);
+            addQuad([x1, y0, h], [x1, y1, h], [x1, y1, hRight], [x1, y0, hRight], cWall[0], cWall[1], cWall[2]);
+            addEdgeLine([x1, y0, h], [x1, y1, h]);
           } else if (diff < -0.001) {
             // Step up to the right (faces -X)
-            addQuad([x1, y1, hRight], [x1, y0, hRight], [x1, y0, h], [x1, y1, h]);
+            addQuad([x1, y1, hRight], [x1, y0, hRight], [x1, y0, h], [x1, y1, h], cWall[0], cWall[1], cWall[2]);
+            addEdgeLine([x1, y0, hRight], [x1, y1, hRight]);
           }
         }
 
@@ -721,10 +753,12 @@ export class CNCSimulator3D {
           const diff = h - hTop;
           if (diff > 0.001) {
             // Step down into +Y (faces +Y)
-            addQuad([x1, y1, h], [x0, y1, h], [x0, y1, hTop], [x1, y1, hTop]);
+            addQuad([x1, y1, h], [x0, y1, h], [x0, y1, hTop], [x1, y1, hTop], cWall[0], cWall[1], cWall[2]);
+            addEdgeLine([x0, y1, h], [x1, y1, h]);
           } else if (diff < -0.001) {
             // Step up into +Y (faces -Y)
-            addQuad([x0, y1, hTop], [x1, y1, hTop], [x1, y1, h], [x0, y1, h]);
+            addQuad([x0, y1, hTop], [x1, y1, hTop], [x1, y1, h], [x0, y1, h], cWall[0], cWall[1], cWall[2]);
+            addEdgeLine([x0, y1, hTop], [x1, y1, hTop]);
           }
         }
       }
@@ -734,34 +768,49 @@ export class CNCSimulator3D {
     for (let i = 0; i < nx - 1; i++) {
       const x0 = getX(i);
       const x1 = getX(i + 1);
-      // Front wall (Y = 0)
       const hFront = heights[i];
-      addQuad([x0, 0, floorZ], [x1, 0, floorZ], [x1, 0, hFront], [x0, 0, hFront]);
-      // Back wall (Y = B.y)
+      addQuad([x0, 0, floorZ], [x1, 0, floorZ], [x1, 0, hFront], [x0, 0, hFront], cExt[0], cExt[1], cExt[2]);
       const hBack = heights[(ny - 2) * nx + i];
-      addQuad([x1, B.y, floorZ], [x0, B.y, floorZ], [x0, B.y, hBack], [x1, B.y, hBack]);
+      addQuad([x1, B.y, floorZ], [x0, B.y, floorZ], [x0, B.y, hBack], [x1, B.y, hBack], cExt[0], cExt[1], cExt[2]);
     }
 
     for (let j = 0; j < ny - 1; j++) {
       const y0 = getY(j);
       const y1 = getY(j + 1);
-      // Left wall (X = 0)
       const hLeft = heights[j * nx];
-      addQuad([0, y1, floorZ], [0, y0, floorZ], [0, y0, hLeft], [0, y1, hLeft]);
-      // Right wall (X = B.x)
+      addQuad([0, y1, floorZ], [0, y0, floorZ], [0, y0, hLeft], [0, y1, hLeft], cExt[0], cExt[1], cExt[2]);
       const hRight = heights[j * nx + (nx - 2)];
-      addQuad([B.x, y0, floorZ], [B.x, y1, floorZ], [B.x, y1, hRight], [B.x, y0, hRight]);
+      addQuad([B.x, y0, floorZ], [B.x, y1, floorZ], [B.x, y1, hRight], [B.x, y0, hRight], cExt[0], cExt[1], cExt[2]);
     }
 
     // 3. Bottom plate (Z = floorZ)
-    addQuad([0, 0, floorZ], [0, B.y, floorZ], [B.x, B.y, floorZ], [B.x, 0, floorZ]);
+    addQuad([0, 0, floorZ], [0, B.y, floorZ], [B.x, B.y, floorZ], [B.x, 0, floorZ], cExt[0] * 0.75, cExt[1] * 0.75, cExt[2] * 0.75);
+
+    // 4. Outer stock rim edge lines
+    addEdgeLine([0, 0, 0], [B.x, 0, 0]);
+    addEdgeLine([B.x, 0, 0], [B.x, B.y, 0]);
+    addEdgeLine([B.x, B.y, 0], [0, B.y, 0]);
+    addEdgeLine([0, B.y, 0], [0, 0, 0]);
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
     geo.computeVertexNormals();
 
     this.stockMesh.geometry.dispose();
     this.stockMesh.geometry = geo;
+
+    // Update CAD Edge lines mesh
+    if (!this.millEdgesMesh) {
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x182c3a, transparent: true, opacity: 0.85 });
+      this.millEdgesMesh = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat);
+      this.scene.add(this.millEdgesMesh);
+    }
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(L, 3));
+    this.millEdgesMesh.geometry.dispose();
+    this.millEdgesMesh.geometry = lineGeo;
+    this.millEdgesMesh.visible = this.mode === 'mill';
   }
 
   applyCut(step) {
