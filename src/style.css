@@ -1,4 +1,4 @@
-/* seeNC Classic Industrial Theme & Modern Hybrid Styling */
+/* DexCNC Classic Industrial Theme & Modern Hybrid Styling */
 :root {
   --bg-app: #d4d0c8;
   --panel-bg: #ece9d8;
@@ -12,7 +12,7 @@
   --brand-blue: #0055ea;
   --accent-cyan: #22b2c8;
   --accent-gold: #f2ba38;
-  --editor-bg: #fffbe6; /* Classic seeNC yellow editor */
+  --editor-bg: #fffbe6; /* Classic DexCNC yellow editor */
   --editor-text: #000080; /* Classic G-code dark navy */
   --editor-hl: #0055ea;
   --status-err: #d92020;
@@ -349,7 +349,7 @@ html, body {
   flex-direction: column;
 }
 
-/* ── Simulation Live Parameter Table (seeNC Clone) ── */
+/* ── Simulation Live Parameter Table (DexCNC Clone) ── */
 .param-table {
   width: 100%;
   border-collapse: collapse;
@@ -444,6 +444,12 @@ html, body {
   position: relative;
   overflow: hidden;
   touch-action: none;
+}
+
+#viewport-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
 }
 
 .viewport-hud {
@@ -833,7 +839,7 @@ html, body {
   filter: brightness(0.95);
 }
 
-/* ── Modern Tool Library Dark Theme Modal (Matching seeNC / MechSimulator) ── */
+/* ── Modern Tool Library Dark Theme Modal (Matching DexCNC / MechSimulator) ── */
 .modal-dialog.modal-tool-lib {
   width: 580px;
   max-width: 95vw;

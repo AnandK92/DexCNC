@@ -407,7 +407,7 @@ appContainer.innerHTML = `
   <div class="window-titlebar">
     <div class="title-text">
       <span style="color:#ffd700;">⚙</span>
-      <span id="win-title-text">Untitled.nc — seeNC Turn (Fanuc 0i-T)</span>
+      <span id="win-title-text">Untitled.nc — DexCNC Turn (Fanuc 0i-T)</span>
     </div>
     <div class="win-btns">
       <div class="win-btn">_</div>
@@ -638,7 +638,7 @@ function loadProgram(code) {
 function updateTitleBar() {
   const isTurn = state.mode === 'turn';
   const modStar = state.isModified ? ' *' : '';
-  const titleText = `${state.currentFileName}${modStar} — seeNC ${isTurn ? 'Turn (Fanuc 0i-T)' : 'Mill (Fanuc 0i-M)'}`;
+  const titleText = `${state.currentFileName}${modStar} — DexCNC ${isTurn ? 'Turn (Fanuc 0i-T)' : 'Mill (Fanuc 0i-M)'}`;
   const el = document.querySelector('#win-title-text');
   if (el) el.textContent = titleText;
 }
@@ -1185,7 +1185,7 @@ function triggerAutoSave() {
   }, 2000);
 }
 
-// ── seeNC Interactive Workpiece Blueprint Schematic (SVG) ──
+// ── DexCNC Interactive Workpiece Blueprint Schematic (SVG) ──
 function renderBlankSchematicSVG(mode, params) {
   const { w, h, l, bore, cx, cy, cz } = params;
   const isTurn = mode === 'turn';
@@ -1431,7 +1431,7 @@ function dispatchAction(act) {
           </div>
 
           <div class="blank-schematic-box">
-            <div class="blank-schematic-title">seeNC Workpiece Blueprint Schematic</div>
+            <div class="blank-schematic-title">DexCNC Workpiece Blueprint Schematic</div>
             <div id="schematic-svg-container"></div>
             <div class="blank-schematic-legend">
               <span style="color:#ef4444;">● +X / -X</span>
@@ -1484,7 +1484,7 @@ function dispatchAction(act) {
           </div>
 
           <div class="blank-schematic-box">
-            <div class="blank-schematic-title">seeNC Mill Stock Schematic</div>
+            <div class="blank-schematic-title">DexCNC Mill Stock Schematic</div>
             <div id="schematic-svg-container"></div>
             <div class="blank-schematic-legend">
               <span style="color:#ef4444;">● +X / -X</span>
@@ -1496,7 +1496,7 @@ function dispatchAction(act) {
         </div>
       `;
 
-      openModal('Blank Dimensions, Thickness & Center Position (seeNC Setup)', bodyHTML, () => {
+      openModal('Blank Dimensions, Thickness & Center Position (DexCNC Setup)', bodyHTML, () => {
         if (isTurn) {
           const w = parseFloat(document.querySelector('#inp-blank-w').value) || 80;
           const h = parseFloat(document.querySelector('#inp-blank-h').value) || 80;
@@ -1747,7 +1747,7 @@ function dispatchAction(act) {
         .replace(/"/g, '&quot;');
 
       // Open the dark modal
-      openModal('Tool Library — seeNC Fanuc Standard Tools', `
+      openModal('Tool Library — DexCNC Fanuc Standard Tools', `
         <div class="tool-lib-subtitle">
           <span id="tool-lib-count-text">${state.toolsList.length}</span> tools are loaded by default. Call one in the program with T0101, T0201 ...
         </div>

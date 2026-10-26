@@ -95,17 +95,29 @@ export class CNCSimulator3D {
     // Coordinate Triad
     this.createTriad();
 
-    // Resize observer
-    const ro = new ResizeObserver(() => {
+    // Resize observer & window listener
+    this.handleResize = () => {
       const w = this.container.clientWidth;
       const h = this.container.clientHeight;
       if (w > 0 && h > 0) {
-        this.camera.aspect = w / h;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(w, h, false);
+        const aspect = w / h;
+        this.perspCamera.aspect = aspect;
+        this.perspCamera.updateProjectionMatrix();
+
+        const frustumH = this.distance * 0.7279;
+        this.orthoCamera.left = -frustumH * aspect / 2;
+        this.orthoCamera.right = frustumH * aspect / 2;
+        this.orthoCamera.top = frustumH / 2;
+        this.orthoCamera.bottom = -frustumH / 2;
+        this.orthoCamera.updateProjectionMatrix();
+
+        this.renderer.setSize(w, h, true);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       }
-    });
+    };
+    const ro = new ResizeObserver(this.handleResize);
     ro.observe(this.container);
+    window.addEventListener('resize', this.handleResize);
 
     this.resetStock();
   }
@@ -526,7 +538,7 @@ export class CNCSimulator3D {
   createLatheToolMesh() {
     const group = new THREE.Group();
 
-    // Pure Standalone Carbide Rhombic Insert (matching genuine seeNC Turn)
+    // Pure Standalone Carbide Rhombic Insert (matching genuine DexCNC Turn)
     // No horizontal tool shank or shoulder block obstructing the workpiece
     const insertGeo = new THREE.BoxGeometry(6.5, 3.2, 6.5);
     const insertMat = new THREE.MeshStandardMaterial({
@@ -552,7 +564,7 @@ export class CNCSimulator3D {
     }
     const group = new THREE.Group();
 
-    // Pure Standalone Cylindrical Cutting Tool (matching genuine seeNC)
+    // Pure Standalone Cylindrical Cutting Tool (matching genuine DexCNC)
     // No bulky shoulder or spindle collar obstructing the view
     const cutterLength = 36;
     const cutterGeo = new THREE.CylinderGeometry(toolRadius, toolRadius, cutterLength, 32);
@@ -1205,6 +1217,13 @@ export class CNCSimulator3D {
       this.orthoCamera.position.set(cx, cy, cz);
       this.orthoCamera.lookAt(this.target);
     } else {
+      const width = this.container.clientWidth || 800;
+      const height = this.container.clientHeight || 600;
+      const aspect = width / Math.max(height, 1);
+      if (Math.abs(this.perspCamera.aspect - aspect) > 0.001) {
+        this.perspCamera.aspect = aspect;
+        this.perspCamera.updateProjectionMatrix();
+      }
       this.perspCamera.position.set(cx, cy, cz);
       this.perspCamera.lookAt(this.target);
     }

@@ -1,14 +1,51 @@
 {
-  "name": "cnc",
-  "version": "0.0.0",
+  "name": "dexcnc",
+  "productName": "DexCNC",
+  "version": "1.0.0",
+  "description": "DexCNC Pro — CNC Turn & Mill Simulator (Fanuc Controller)",
   "private": true,
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "electron .",
+    "electron:build": "vite build && electron-builder --win",
+    "package:portable": "vite build && electron-builder --win portable",
+    "package:installer": "vite build && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.dexcnc.simulator",
+    "productName": "DexCNC",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "executableName": "DexCNC"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DexCNC Pro"
+    },
+    "portable": {
+      "artifactName": "DexCNC_Portable_${version}.${ext}"
+    }
   },
   "devDependencies": {
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8",
     "vite": "^8.3.4",
     "vite-plugin-singlefile": "^2.3.4"
   },

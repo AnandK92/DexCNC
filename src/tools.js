@@ -1,5 +1,5 @@
 // Tool library for CNC Turn and Mill with 42 Standard Fanuc Tools
-// Exact specifications matching seeNC / mechsimulator standard tool database
+// Exact specifications matching DexCNC standard tool database
 
 export const DEFAULT_42_TOOLS = [
   // ── 1. Turning insert CNMG (4 tools) ──
