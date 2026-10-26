@@ -488,6 +488,12 @@ html, body {
   background: #b5d5ff;
 }
 
+.view-shortcut-btn.active {
+  background: #2b78e4;
+  color: #ffffff;
+  border-color: #1a56a6;
+}
+
 /* ── Bottom Status Bar ── */
 .status-bar {
   display: flex;

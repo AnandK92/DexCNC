@@ -205,6 +205,7 @@ appContainer.innerHTML = `
         <div class="dropdown-item" data-act="view-top">Top (XY / Milling Plane)</div>
         <div class="dropdown-item" data-act="view-side">Side (YZ)</div>
         <div class="dropdown-sep"></div>
+        <div class="dropdown-item" data-act="toggle-origin" id="menu-toggle-origin">✓ Show Origin Point (G54)</div>
         <div class="dropdown-item" data-act="view-cross">Toggle 3/4 Cross-Section</div>
       </div>
     </div>
@@ -236,6 +237,7 @@ appContainer.innerHTML = `
     <button class="tool-btn" data-act="view-front" title="2D Front Projection View">📐 2D View</button>
     <button class="tool-btn" data-act="view-iso" title="3D Isometric View">🧊 3D Iso</button>
     <button class="tool-btn" data-act="view-top" title="Top View">Top</button>
+    <button class="tool-btn active" data-act="toggle-origin" id="btn-toggle-origin" title="Toggle G54 Origin Marker (Hotkey: O)">⊕ Origin</button>
 
     <div class="toolbar-slider-group">
       <span>Speed:</span>
@@ -301,6 +303,7 @@ appContainer.innerHTML = `
         <button class="view-shortcut-btn" data-act="view-iso" title="3D Isometric">3D Iso</button>
         <button class="view-shortcut-btn" data-act="view-top" title="Top View">Top</button>
         <button class="view-shortcut-btn" data-act="view-cross" title="Cross Section">Cross-Sec</button>
+        <button class="view-shortcut-btn active" data-act="toggle-origin" id="shortcut-toggle-origin" title="Toggle Origin Marker (Hotkey: O)">⊕ Origin</button>
       </div>
     </div>
   </div>
@@ -1655,7 +1658,23 @@ function dispatchAction(act) {
     case 'view-cross':
       sim3d.setView('cross_section');
       break;
+
+    case 'toggle-origin': {
+      const isVis = sim3d.toggleOriginVisible();
+      updateOriginButtons(isVis);
+      updateHud(`Origin (G54): ${isVis ? 'Shown' : 'Hidden'}`);
+      break;
+    }
   }
+}
+
+function updateOriginButtons(isVis) {
+  const btn = document.querySelector('#btn-toggle-origin');
+  const sc = document.querySelector('#shortcut-toggle-origin');
+  const menu = document.querySelector('#menu-toggle-origin');
+  if (btn) btn.classList.toggle('active', isVis);
+  if (sc) sc.classList.toggle('active', isVis);
+  if (menu) menu.textContent = isVis ? '✓ Show Origin Point (G54)' : '   Show Origin Point (G54)';
 }
 
 // Global button listeners
@@ -1732,6 +1751,12 @@ window.addEventListener('keydown', (e) => {
 
   // If editing inside textarea, allow standard typing
   if (document.activeElement === editorEl) return;
+
+  if (e.key.toLowerCase() === 'o') {
+    e.preventDefault();
+    dispatchAction('toggle-origin');
+    return;
+  }
 
   if (e.code === 'Space') {
     e.preventDefault();

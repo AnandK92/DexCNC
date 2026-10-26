@@ -35,6 +35,7 @@ export class CNCSimulator3D {
     this.millStock = null; // { res, nx, ny, heights: Float32Array }
     this.isMeshDirty = false;
     this.crossSectionMode = false;
+    this.showOrigin = true;
 
     this.initScene();
     this.setupInteractions();
@@ -202,7 +203,8 @@ export class CNCSimulator3D {
     this.datumGroup = new THREE.Group();
 
     // 1. Datum Target: Circular quadrant disc (Classic CAD / CAM datum target W / G54)
-    const radius = 5;
+    // Scaled down to subtle, proportional diameter (radius = 2.0 mm) so it does not obstruct workpiece or cut tip
+    const radius = 2.0;
     const canvas = document.createElement('canvas');
     canvas.width = 128;
     canvas.height = 128;
@@ -244,8 +246,8 @@ export class CNCSimulator3D {
     const createLine = (p1, p2, color, dashed = false) => {
       const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
       const mat = dashed
-        ? new THREE.LineDashedMaterial({ color, dashSize: 4, gapSize: 3, opacity: 0.5, transparent: true })
-        : new THREE.LineBasicMaterial({ color, opacity: 0.7, transparent: true });
+        ? new THREE.LineDashedMaterial({ color, dashSize: 4, gapSize: 3, opacity: 0.45, transparent: true })
+        : new THREE.LineBasicMaterial({ color, opacity: 0.65, transparent: true });
       const line = new THREE.Line(geo, mat);
       if (dashed) line.computeLineDistances();
       this.datumGroup.add(line);
@@ -264,6 +266,19 @@ export class CNCSimulator3D {
     createLine(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -axisLen), 0x207038, true);
 
     this.scene.add(this.datumGroup);
+    this.datumGroup.visible = this.showOrigin !== false;
+  }
+
+  setOriginVisible(visible) {
+    this.showOrigin = !!visible;
+    if (this.datumGroup) {
+      this.datumGroup.visible = this.showOrigin;
+    }
+    return this.showOrigin;
+  }
+
+  toggleOriginVisible() {
+    return this.setOriginVisible(!this.showOrigin);
   }
 
   setupInteractions() {
@@ -511,19 +526,17 @@ export class CNCSimulator3D {
   createLatheToolMesh() {
     const group = new THREE.Group();
 
-    // Steel Tool Shank (grey)
-    const shankGeo = new THREE.BoxGeometry(20, 10, 10);
-    const shankMat = new THREE.MeshStandardMaterial({ color: 0x3a424d, metalness: 0.5, roughness: 0.4 });
-    const shank = new THREE.Mesh(shankGeo, shankMat);
-    shank.position.set(0, 8, 0);
-    group.add(shank);
-
-    // Gold Carbide Rhombic Insert
-    const insertGeo = new THREE.BoxGeometry(7, 3, 7);
-    const insertMat = new THREE.MeshStandardMaterial({ color: 0xf2ba38, metalness: 0.7, roughness: 0.25 });
+    // Pure Standalone Carbide Rhombic Insert (matching genuine seeNC Turn)
+    // No horizontal tool shank or shoulder block obstructing the workpiece
+    const insertGeo = new THREE.BoxGeometry(6.5, 3.2, 6.5);
+    const insertMat = new THREE.MeshStandardMaterial({
+      color: 0xc89632, // TiN coated golden carbide
+      metalness: 0.78,
+      roughness: 0.28
+    });
     const insert = new THREE.Mesh(insertGeo, insertMat);
     insert.position.set(0, 0, 0);
-    insert.rotation.y = Math.PI / 4; // Rhombic angle
+    insert.rotation.y = Math.PI / 4; // Rhombic cutting orientation
     group.add(insert);
 
     this.toolMesh = group;
