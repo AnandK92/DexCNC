@@ -3,9 +3,23 @@ import { CNCParser } from './parser.js';
 import { CNCSimulator3D } from './simulation.js';
 import { createDefaultTurret, TOOL_DATABASE, DEFAULT_42_TOOLS, TOOL_CATEGORIES } from './tools.js';
 
-// Pre-packaged Fanuc Example Programs
-const SAMPLES = {
-  turn: `(G71 EXTERNAL TURN CYCLE - FANUC 0i-T)
+// Pre-packaged Fanuc Example Programs with Sketches & Dimensioned Specs
+const SAMPLE_LIBRARY = {
+  turn: [
+    {
+      id: 'turn-g71-roughing',
+      title: 'OD Multi-Step Shaft Roughing & Finishing (G71/G70)',
+      desc: 'Canned roughing cycle with stepped diameters (36, 46, 60, 75mm), 45° chamfers, convex and concave radii, followed by G70 finishing pass.',
+      blank: { w: 80, h: 80, d: 80, l: 100, thickness: 80, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
+      tools: 'T0101 (Roughing PCLNL R0.8), T0303 (Grooving 2mm)',
+      svg: `<svg viewBox="0 0 200 100" class="sample-preview-svg" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="100" fill="#0f172a" rx="4"/>
+        <line x1="10" y1="50" x2="190" y2="50" stroke="#38bdf8" stroke-dasharray="3,3" stroke-width="1"/>
+        <rect x="20" y="15" width="25" height="70" fill="#334155" stroke="#64748b"/>
+        <polygon points="45,20 85,20 95,30 130,30 145,40 175,40 180,45 180,55 175,60 145,60 130,70 95,70 85,80 45,80" fill="#0284c7" stroke="#38bdf8" stroke-width="1.5"/>
+        <text x="100" y="92" fill="#94a3b8" font-size="8" text-anchor="middle" font-family="sans-serif">⌀80 × 100mm Multi-Step</text>
+      </svg>`,
+      code: `(G71 EXTERNAL TURN CYCLE - FANUC 0i-T)
 (BLANK: OD 80mm X LENGTH 100mm)
 G21 G18 G99
 G28 U0.0 W0.0
@@ -43,8 +57,112 @@ G28 U0.0 W0.0
 M05
 M09
 M30
-`,
-  mill: `(3-AXIS MILLING & DRILLING - FANUC 0i-M)
+`
+    },
+    {
+      id: 'turn-spherical-contour',
+      title: 'Spherical Ball-Nose & Taper Contour',
+      desc: 'Precision spherical dome nose turned with G02 circular interpolation leading into a smooth taper and straight shoulder.',
+      blank: { w: 60, h: 60, d: 60, l: 80, thickness: 60, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
+      tools: 'T0101 (Finishing Tool VNMG R0.4)',
+      svg: `<svg viewBox="0 0 200 100" class="sample-preview-svg" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="100" fill="#0f172a" rx="4"/>
+        <line x1="10" y1="50" x2="190" y2="50" stroke="#38bdf8" stroke-dasharray="3,3" stroke-width="1"/>
+        <rect x="25" y="20" width="30" height="60" fill="#334155" stroke="#64748b"/>
+        <path d="M 55,25 L 105,25 L 145,35 Q 175,35 175,50 Q 175,65 145,65 L 105,75 L 55,75 Z" fill="#0284c7" stroke="#38bdf8" stroke-width="1.5"/>
+        <text x="100" y="92" fill="#94a3b8" font-size="8" text-anchor="middle" font-family="sans-serif">⌀60 × 80mm Ball Nose</text>
+      </svg>`,
+      code: `(SPHERICAL DOME NOSE & TAPER - FANUC 0i-T)
+(BLANK: OD 60mm X LENGTH 80mm)
+G21 G18 G99
+G28 U0.0 W0.0
+T0101 (VNMG 35-DEG CONTOUR TOOL R0.4)
+G50 S3500
+G96 S240 M03
+G00 X65.0 Z5.0 M08
+
+(--- FACE FRONT ---)
+G00 X62.0 Z0.0
+G01 X0.0 F0.15
+G00 X25.0 Z2.0
+
+(--- SPHERICAL CONTOUR PROFILE ---)
+G01 Z0.0 F0.12
+G02 X35.0 Z-15.0 R12.0 F0.10
+G01 Z-35.0
+G01 X50.0 Z-55.0
+G01 Z-70.0
+G01 X60.0
+G00 X70.0 Z50.0
+G28 U0.0 W0.0
+M05
+M30
+`
+    },
+    {
+      id: 'turn-groove-thread',
+      title: 'OD Grooving & O-Ring Reliefs',
+      desc: 'Multiple snap-ring / O-ring relief grooves turned with precision dwell timing (G04) across cylindrical stepped body.',
+      blank: { w: 50, h: 50, d: 50, l: 85, thickness: 50, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
+      tools: 'T0101 (Turning), T0303 (Grooving 3mm)',
+      svg: `<svg viewBox="0 0 200 100" class="sample-preview-svg" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="100" fill="#0f172a" rx="4"/>
+        <line x1="10" y1="50" x2="190" y2="50" stroke="#38bdf8" stroke-dasharray="3,3" stroke-width="1"/>
+        <polygon points="30,22 80,22 80,32 90,32 90,22 110,22 110,32 120,32 120,22 165,22 165,78 120,78 120,68 110,68 110,78 90,78 90,68 80,68 80,78 30,78" fill="#0284c7" stroke="#38bdf8" stroke-width="1.5"/>
+        <text x="100" y="92" fill="#94a3b8" font-size="8" text-anchor="middle" font-family="sans-serif">⌀50 × 85mm Twin Groove</text>
+      </svg>`,
+      code: `(OD MULTI-GROOVING & RELIEF - FANUC 0i-T)
+(BLANK: OD 50mm X LENGTH 85mm)
+G21 G18 G99
+G28 U0.0 W0.0
+
+(--- OP 1: TURN OD DIAMETER ---)
+T0101
+G97 S1800 M03
+G00 X52.0 Z2.0 M08
+G00 X40.0
+G01 Z-60.0 F0.20
+G01 X50.0
+G00 X60.0 Z20.0
+
+(--- OP 2: DUAL O-RING GROOVES ---)
+T0303 (3MM PARTING/GROOVING INSERT)
+G97 S1100 M03
+G00 X44.0 Z-20.0
+G01 X32.0 F0.06
+G04 X1.0 (DWELL 1 SEC)
+G00 X44.0
+
+G00 Z-38.0
+G01 X32.0 F0.06
+G04 X1.0
+G00 X44.0
+G00 X70.0 Z50.0
+G28 U0.0 W0.0
+M05
+M30
+`
+    }
+  ],
+  mill: [
+    {
+      id: 'mill-contour-pocket',
+      title: '3-Axis Contour Perimeter & Center Pocket',
+      desc: 'Outer boundary roughing and finishing with flat end mill, circular pocketing interpolation (G02) and 4-corner peck drilling pattern.',
+      blank: { w: 100, h: 80, d: 20, l: 100, x: 100, y: 80, z: 20, thickness: 20, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
+      tools: 'T01 (Flat End Mill 10mm), T03 (Twist Drill 8mm)',
+      svg: `<svg viewBox="0 0 200 100" class="sample-preview-svg" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="100" fill="#0f172a" rx="4"/>
+        <rect x="30" y="15" width="140" height="70" fill="#1e293b" stroke="#64748b" stroke-width="1.5" rx="3"/>
+        <rect x="45" y="25" width="110" height="50" fill="#0284c7" stroke="#38bdf8" stroke-width="1.2" rx="4"/>
+        <circle cx="100" cy="50" r="16" fill="#0369a1" stroke="#7dd3fc" stroke-width="1.2"/>
+        <circle cx="55" cy="35" r="3.5" fill="#f59e0b"/>
+        <circle cx="145" cy="35" r="3.5" fill="#f59e0b"/>
+        <circle cx="145" cy="65" r="3.5" fill="#f59e0b"/>
+        <circle cx="55" cy="65" r="3.5" fill="#f59e0b"/>
+        <text x="100" y="93" fill="#94a3b8" font-size="8" text-anchor="middle" font-family="sans-serif">100 × 80 × 20mm VMC</text>
+      </svg>`,
+      code: `(3-AXIS MILLING & DRILLING - FANUC 0i-M)
 (BLANK: 100mm X 80mm X 20mm)
 G21 G90 G17 G54
 G28 Z0.0
@@ -82,6 +200,139 @@ M05
 G28 X0.0 Y0.0
 M30
 `
+    },
+    {
+      id: 'mill-facing-island',
+      title: 'Face Milling & Raised Stepped Boss',
+      desc: 'Zigzag planar face milling pass across top surface followed by stepped circular island boss and corner chamfers.',
+      blank: { w: 110, h: 90, d: 25, l: 110, x: 110, y: 90, z: 25, thickness: 25, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
+      tools: 'T02 (Face Mill 50mm), T01 (End Mill 12mm)',
+      svg: `<svg viewBox="0 0 200 100" class="sample-preview-svg" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="100" fill="#0f172a" rx="4"/>
+        <rect x="35" y="15" width="130" height="70" fill="#0284c7" stroke="#38bdf8" stroke-width="1.5" rx="3"/>
+        <circle cx="100" cy="50" r="22" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5"/>
+        <circle cx="100" cy="50" r="10" fill="#0369a1" stroke="#7dd3fc" stroke-width="1.2"/>
+        <text x="100" y="93" fill="#94a3b8" font-size="8" text-anchor="middle" font-family="sans-serif">110 × 90 × 25mm Boss Plate</text>
+      </svg>`,
+      code: `(FACE MILLING & RAISED BOSS - FANUC 0i-M)
+(BLANK: 110mm X 90mm X 25mm)
+G21 G90 G17 G54
+G28 Z0.0
+T02 M06 (FACE MILL 50MM)
+S2200 M03
+G00 X-30.0 Y20.0 Z10.0
+G01 Z-1.5 F400
+
+(--- ZIGZAG FACE MILLING PASSES ---)
+G01 X140.0 F800
+G00 Y50.0
+G01 X-30.0
+G00 Y80.0
+G01 X140.0
+G00 Z15.0
+
+(--- RAISED STEPPED BOSS MILLING ---)
+T01 M06 (END MILL 12MM)
+S2800 M03
+G00 X55.0 Y45.0 Z5.0
+G01 Z-5.0 F250
+G02 X55.0 Y45.0 I25.0 J0.0 F600
+G00 Z20.0
+M05
+G28 X0.0 Y0.0
+M30
+`
+    },
+    {
+      id: 'mill-pcd-drilling',
+      title: 'Bolt Hole Circle PCD & Center Bore',
+      desc: 'Bolt Hole Pitch Circle Diameter (PCD) polar drill array with central clearance bore and perimeter slots.',
+      blank: { w: 90, h: 90, d: 20, l: 90, x: 90, y: 90, z: 20, thickness: 20, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
+      tools: 'T01 (End Mill 10mm), T03 (Twist Drill 6mm)',
+      svg: `<svg viewBox="0 0 200 100" class="sample-preview-svg" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="100" fill="#0f172a" rx="4"/>
+        <circle cx="100" cy="50" r="38" fill="#1e293b" stroke="#64748b" stroke-width="1.5"/>
+        <circle cx="100" cy="50" r="26" fill="none" stroke="#38bdf8" stroke-dasharray="2,2" stroke-width="1"/>
+        <circle cx="100" cy="50" r="12" fill="#0284c7" stroke="#38bdf8" stroke-width="1.2"/>
+        <circle cx="126" cy="50" r="3" fill="#f59e0b"/>
+        <circle cx="113" cy="72.5" r="3" fill="#f59e0b"/>
+        <circle cx="87" cy="72.5" r="3" fill="#f59e0b"/>
+        <circle cx="74" cy="50" r="3" fill="#f59e0b"/>
+        <circle cx="87" cy="27.5" r="3" fill="#f59e0b"/>
+        <circle cx="113" cy="27.5" r="3" fill="#f59e0b"/>
+        <text x="100" y="95" fill="#94a3b8" font-size="8" text-anchor="middle" font-family="sans-serif">⌀75mm PCD 6-Hole Flange</text>
+      </svg>`,
+      code: `(PCD BOLT HOLE FLANGE - FANUC 0i-M)
+(BLANK: 90mm X 90mm X 20mm)
+G21 G90 G17 G54
+G28 Z0.0
+T01 M06 (END MILL 10MM)
+S3200 M03
+G00 X45.0 Y45.0 Z10.0
+
+(--- CENTER BORE ---)
+G01 Z-12.0 F150
+G02 X45.0 Y45.0 I12.0 J0.0 F500
+G00 Z10.0
+
+(--- G81 6-HOLE PCD PATTERN ---)
+T03 M06 (DRILL 6.0MM)
+S2000 M03
+G00 Z5.0
+G81 X71.0 Y45.0 Z-18.0 R2.0 F120
+X58.0 Y67.5
+X32.0 Y67.5
+X19.0 Y45.0
+X32.0 Y22.5
+X58.0 Y22.5
+G80
+G00 Z30.0
+M05
+G28 X0.0 Y0.0
+M30
+`
+    }
+  ]
+};
+
+// Default Clean Template for New File
+const DEFAULT_CLEAN_TEMPLATES = {
+  turn: `%
+O0001 (UNTITLED TURNING PROGRAM)
+(FANUC 0i-T LATHE)
+G21 G18 G99
+G28 U0.0 W0.0
+T0101
+G50 S3000
+G96 S200 M03
+G00 X50.0 Z2.0 M08
+
+(ENTER MACHINING CODE HERE)
+
+G00 X60.0 Z50.0
+G28 U0.0 W0.0
+M05
+M09
+M30
+%
+`,
+  mill: `%
+O0001 (UNTITLED MILLING PROGRAM)
+(FANUC 0i-M 3-AXIS VMC)
+G21 G90 G17 G54
+G28 Z0.0
+T01 M06
+S3000 M03
+G00 X0.0 Y0.0 Z10.0
+
+(ENTER MACHINING CODE HERE)
+
+G00 Z30.0
+M05
+G28 X0.0 Y0.0
+M30
+%
+`
 };
 
 class AppState {
@@ -91,6 +342,7 @@ class AppState {
     this.currentFileHandle = null;
     this.currentFileName = 'Untitled.nc';
     this.isModified = false;
+    this.autoSaveEnabled = localStorage.getItem('cnc_autosave') !== 'false';
     this.blank = {
       w: 80,
       h: 80,
@@ -126,7 +378,7 @@ appContainer.innerHTML = `
   <div class="window-titlebar">
     <div class="title-text">
       <span style="color:#ffd700;">⚙</span>
-      <span id="win-title-text">G71-External-turn-cycle.txt — seeNC Turn (Fanuc 0i-T)</span>
+      <span id="win-title-text">Untitled.nc — seeNC Turn (Fanuc 0i-T)</span>
     </div>
     <div class="win-btns">
       <div class="win-btn">_</div>
@@ -145,7 +397,9 @@ appContainer.innerHTML = `
         <div class="dropdown-item" data-act="file-save">Save <span style="font-size:10px;color:#888;margin-left:12px;">Ctrl+S</span></div>
         <div class="dropdown-item" data-act="file-save-as">Save As... <span style="font-size:10px;color:#888;margin-left:12px;">Ctrl+Shift+S</span></div>
         <div class="dropdown-sep"></div>
-        <div class="dropdown-item" data-act="file-sample">Load Default Sample</div>
+        <div class="dropdown-item" data-act="toggle-autosave" id="menu-toggle-autosave">✓ Auto-Save</div>
+        <div class="dropdown-sep"></div>
+        <div class="dropdown-item" data-act="open-samples-modal">📁 Load Sample Program...</div>
         <div class="dropdown-sep"></div>
         <div class="dropdown-item" data-act="file-export-stl">Export 3D STL (Part)</div>
       </div>
@@ -225,6 +479,7 @@ appContainer.innerHTML = `
     <button class="tool-btn" data-act="file-new" title="New Program">📄 New</button>
     <button class="tool-btn" data-act="file-open" title="Open Program">📂 Open</button>
     <button class="tool-btn" data-act="file-save" title="Save Program">💾 Save</button>
+    <button class="tool-btn" data-act="open-samples-modal" title="Browse and Load Sample Programs" style="font-weight:600;color:#0b57d0;">📁 Load Sample</button>
     <div class="toolbar-sep"></div>
     <button class="tool-btn" data-act="edit-renumber" title="Renumber N-blocks">🔢 N#</button>
     <button class="tool-btn" data-act="run-error-check" title="Error-check G-Code" style="color:#b22222;font-weight:bold;">🔍 Check</button>
@@ -313,6 +568,7 @@ appContainer.innerHTML = `
     <div class="status-cell" id="stat-mode">Mode: Turn</div>
     <div class="status-cell" id="stat-line">Line: 1</div>
     <div class="status-cell" id="stat-time">Est. Cycle Time: 0:00</div>
+    <div class="status-cell cursor-pointer" data-act="toggle-autosave" id="stat-autosave" title="Click to Toggle Auto-Save" style="cursor:pointer;font-weight:600;color:#0b57d0;">⚡ Auto-Save: ON</div>
     <div style="margin-left:auto;" id="stat-pos">X: 0.000 | Z: 0.000</div>
   </div>
 </div>
@@ -491,11 +747,15 @@ function switchMode(newMode) {
   parser.setMode(state.mode, state.blank, state.tools);
   if (sim3d) {
     sim3d.setMode(state.mode, state.blank);
-    sim3d.setView(isTurn ? 'front' : 'iso');
+    // In milling mode default to Top (XY), in turning default to 2D Front (XZ)
+    sim3d.setView(isTurn ? 'front' : 'top');
   }
 
-  // Load appropriate default sample
-  loadProgram(SAMPLES[newMode]);
+  // If editor is empty or generic untitled template, update with clean template for new mode
+  if (!state.isModified && (!editorEl.value || editorEl.value.trim().length === 0 || editorEl.value.includes('UNTITLED'))) {
+    editorEl.value = DEFAULT_CLEAN_TEMPLATES[newMode];
+  }
+  recompileAndReset();
   updateHud(`Switched to ${isTurn ? 'CNC Turning (Lathe)' : 'CNC Milling (VMC)'} Mode`);
 }
 
@@ -658,13 +918,16 @@ const modalCloseX = document.querySelector('#modal-close-x');
 const modalCancel = document.querySelector('#modal-cancel-btn');
 const modalApply = document.querySelector('#modal-apply-btn');
 
-function openModal(title, bodyHTML, onApply, isWide = false, isToolLib = false) {
+function openModal(title, bodyHTML, onApply, isWide = false, isToolLib = false, isSamples = false) {
   const dialog = document.querySelector('.modal-dialog');
   if (isWide) dialog.classList.add('modal-wide');
   else dialog.classList.remove('modal-wide');
 
   if (isToolLib) dialog.classList.add('modal-tool-lib');
   else dialog.classList.remove('modal-tool-lib');
+
+  if (isSamples) dialog.classList.add('modal-samples');
+  else dialog.classList.remove('modal-samples');
 
   modalTitle.textContent = title;
   modalBody.innerHTML = bodyHTML;
@@ -680,10 +943,212 @@ function closeModal() {
   const dialog = document.querySelector('.modal-dialog');
   dialog.classList.remove('modal-wide');
   dialog.classList.remove('modal-tool-lib');
+  dialog.classList.remove('modal-samples');
+  const footer = document.querySelector('.modal-footer');
+  if (footer) footer.style.display = 'flex';
 }
 
 modalCloseX.onclick = closeModal;
 modalCancel.onclick = closeModal;
+
+// Unsaved Work Confirmation Guard
+function confirmUnsavedChanges(onProceed) {
+  if (!state.isModified || !editorEl.value || editorEl.value.trim().length === 0 || editorEl.value.includes('UNTITLED')) {
+    onProceed();
+    return;
+  }
+  const modalHTML = `
+    <div style="padding:16px 20px;font-size:13px;line-height:1.5;">
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;">
+        <span style="font-size:30px;line-height:1;">⚠️</span>
+        <div>
+          <div style="font-weight:700;font-size:14px;color:#b91c1c;">Unsaved Project Changes</div>
+          <div style="color:#4b5563;margin-top:3px;">You have unsaved changes in <strong>${state.currentFileName}</strong>.</div>
+        </div>
+      </div>
+      <p style="margin:0 0 16px 0;color:#374151;">Would you like to save your current work before opening or loading another program?</p>
+      <div style="display:flex;justify-content:flex-end;gap:10px;padding-top:12px;border-top:1px solid #e5e7eb;">
+        <button id="unsaved-cancel-btn" class="dialog-btn">Cancel</button>
+        <button id="unsaved-discard-btn" class="dialog-btn" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Discard Changes</button>
+        <button id="unsaved-save-btn" class="dialog-btn primary">Save & Continue</button>
+      </div>
+    </div>
+  `;
+  openModal('Warning — Unsaved Program', modalHTML, null, false, false, false);
+  const footer = document.querySelector('.modal-footer');
+  if (footer) footer.style.display = 'none';
+
+  document.querySelector('#unsaved-cancel-btn').onclick = () => {
+    closeModal();
+  };
+
+  document.querySelector('#unsaved-discard-btn').onclick = () => {
+    closeModal();
+    onProceed();
+  };
+
+  document.querySelector('#unsaved-save-btn').onclick = async () => {
+    closeModal();
+    await saveFile(false);
+    onProceed();
+  };
+}
+
+// Sample G-Code Programs Library Dialog
+function openSamplesModal(initialMode = null) {
+  let activeTabMode = initialMode || state.mode;
+
+  const renderModalContent = () => {
+    const list = SAMPLE_LIBRARY[activeTabMode] || [];
+    const isTurn = activeTabMode === 'turn';
+
+    const tabsHTML = `
+      <div class="samples-tabs">
+        <button class="samples-tab-btn ${isTurn ? 'active' : ''}" id="tab-turn-samples">Turning Center (Lathe — Fanuc 0i-T)</button>
+        <button class="samples-tab-btn ${!isTurn ? 'active' : ''}" id="tab-mill-samples">Milling Center (VMC — Fanuc 0i-M)</button>
+      </div>
+    `;
+
+    const cardsHTML = `
+      <div class="samples-grid">
+        ${list.map(sample => `
+          <div class="sample-card" data-sample-id="${sample.id}">
+            <div class="sample-card-preview">
+              ${sample.svg}
+            </div>
+            <div class="sample-card-body">
+              <div class="sample-card-title">${sample.title}</div>
+              <div class="sample-card-desc">${sample.desc}</div>
+              <div class="sample-card-meta">
+                <div><strong>Blank:</strong> ${isTurn ? `⌀${sample.blank.w} × ${sample.blank.l}mm` : `${sample.blank.w} × ${sample.blank.h} × ${sample.blank.d}mm`}</div>
+                <div><strong>Tools:</strong> ${sample.tools}</div>
+              </div>
+              <button class="sample-card-load-btn" data-load-sample="${sample.id}">
+                📥 Load This Sample
+              </button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    return tabsHTML + cardsHTML;
+  };
+
+  openModal('Sample G-Code Programs Library', renderModalContent(), null, false, false, true);
+  const footer = document.querySelector('.modal-footer');
+  if (footer) footer.style.display = 'none';
+
+  const bindEvents = () => {
+    const btnTurn = document.querySelector('#tab-turn-samples');
+    const btnMill = document.querySelector('#tab-mill-samples');
+    if (btnTurn) {
+      btnTurn.onclick = () => {
+        activeTabMode = 'turn';
+        modalBody.innerHTML = renderModalContent();
+        bindEvents();
+      };
+    }
+    if (btnMill) {
+      btnMill.onclick = () => {
+        activeTabMode = 'mill';
+        modalBody.innerHTML = renderModalContent();
+        bindEvents();
+      };
+    }
+
+    modalBody.querySelectorAll('[data-load-sample]').forEach(btn => {
+      btn.onclick = () => {
+        const sampleId = btn.dataset.loadSample;
+        const all = [...SAMPLE_LIBRARY.turn, ...SAMPLE_LIBRARY.mill];
+        const selected = all.find(s => s.id === sampleId);
+        if (!selected) return;
+
+        confirmUnsavedChanges(() => {
+          closeModal();
+          // If sample belongs to different mode, switch mode first
+          if (activeTabMode !== state.mode) {
+            switchMode(activeTabMode);
+          }
+          // Apply sample blank dimensions
+          Object.assign(state.blank, selected.blank);
+          state.currentFileHandle = null;
+          state.currentFileName = `${selected.id}.nc`;
+          state.isModified = false;
+          loadProgram(selected.code);
+          updateTitleBar();
+          // Set mode-specific default viewpoint:
+          sim3d.setView(state.mode === 'turn' ? 'front' : 'top');
+          updateHud(`Loaded sample: ${selected.title}`);
+        });
+      };
+    });
+  };
+
+  bindEvents();
+}
+
+// Auto-Save Management
+function toggleAutoSave(forceVal = null) {
+  if (forceVal !== null) {
+    state.autoSaveEnabled = !!forceVal;
+  } else {
+    state.autoSaveEnabled = !state.autoSaveEnabled;
+  }
+  localStorage.setItem('cnc_autosave', state.autoSaveEnabled ? 'true' : 'false');
+  updateAutoSaveUI();
+  updateHud(`Auto-Save: ${state.autoSaveEnabled ? 'Enabled' : 'Disabled'}`);
+}
+
+function updateAutoSaveUI() {
+  const menu = document.querySelector('#menu-toggle-autosave');
+  const stat = document.querySelector('#stat-autosave');
+  if (menu) {
+    menu.textContent = state.autoSaveEnabled ? '✓ Auto-Save' : '   Auto-Save';
+  }
+  if (stat) {
+    stat.textContent = state.autoSaveEnabled ? '⚡ Auto-Save: ON' : '⚡ Auto-Save: OFF';
+    stat.style.color = state.autoSaveEnabled ? '#0b57d0' : '#888888';
+  }
+}
+
+let autoSaveTimer = null;
+function triggerAutoSave() {
+  if (!state.autoSaveEnabled) return;
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(async () => {
+    const code = editorEl.value;
+    try {
+      localStorage.setItem(`cnc_autosave_${state.mode}_code`, code);
+      localStorage.setItem(`cnc_autosave_${state.mode}_file`, state.currentFileName);
+      localStorage.setItem(`cnc_autosave_${state.mode}_time`, Date.now().toString());
+    } catch (e) {
+      console.warn('Local storage auto-save failed:', e);
+    }
+
+    if (state.currentFileHandle && !state.currentFileName.startsWith('Untitled')) {
+      try {
+        const writable = await state.currentFileHandle.createWritable();
+        await writable.write(code);
+        await writable.close();
+        state.isModified = false;
+        updateTitleBar();
+      } catch (err) {
+        console.warn('Direct file handle auto-save failed:', err);
+      }
+    }
+
+    const stat = document.querySelector('#stat-autosave');
+    if (stat) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      stat.textContent = `⚡ Saved (${timeStr})`;
+      setTimeout(() => {
+        if (state.autoSaveEnabled) stat.textContent = '⚡ Auto-Save: ON';
+      }, 3000);
+    }
+  }, 2000);
+}
 
 // ── seeNC Interactive Workpiece Blueprint Schematic (SVG) ──
 function renderBlankSchematicSVG(mode, params) {
@@ -810,34 +1275,37 @@ function renderBlankSchematicSVG(mode, params) {
 function dispatchAction(act) {
   switch (act) {
     case 'mode-turn':
-      switchMode('turn');
+      confirmUnsavedChanges(() => switchMode('turn'));
       break;
 
     case 'mode-mill':
-      switchMode('mill');
+      confirmUnsavedChanges(() => switchMode('mill'));
       break;
 
     case 'file-new':
-      state.currentFileHandle = null;
-      state.currentFileName = 'Untitled.nc';
-      state.isModified = false;
-      editorEl.value = '';
-      recompileAndReset();
-      updateTitleBar();
-      sim3d.setView(state.mode === 'turn' ? 'front' : 'iso');
-      updateHud('Ready (New File)');
+      confirmUnsavedChanges(() => {
+        state.currentFileHandle = null;
+        state.currentFileName = 'Untitled.nc';
+        state.isModified = false;
+        editorEl.value = DEFAULT_CLEAN_TEMPLATES[state.mode];
+        recompileAndReset();
+        updateTitleBar();
+        sim3d.setView(state.mode === 'turn' ? 'front' : 'top');
+        updateHud('Ready (New File)');
+      });
       break;
 
     case 'file-sample':
-      state.currentFileHandle = null;
-      state.currentFileName = state.mode === 'turn' ? 'G71_Roughing_Sample.nc' : '3Axis_Mill_Drill_Sample.nc';
-      state.isModified = false;
-      loadProgram(SAMPLES[state.mode]);
-      updateTitleBar();
+    case 'open-samples-modal':
+      openSamplesModal();
+      break;
+
+    case 'toggle-autosave':
+      toggleAutoSave();
       break;
 
     case 'file-open':
-      openFile();
+      confirmUnsavedChanges(() => openFile());
       break;
 
     case 'file-save':
@@ -1699,7 +2167,12 @@ speedSlider.oninput = (e) => {
 const modeQuickSelect = document.querySelector('#mode-quick-select');
 if (modeQuickSelect) {
   modeQuickSelect.onchange = (e) => {
-    switchMode(e.target.value);
+    const targetMode = e.target.value;
+    modeQuickSelect.value = state.mode;
+    confirmUnsavedChanges(() => {
+      switchMode(targetMode);
+      modeQuickSelect.value = targetMode;
+    });
   };
 }
 
@@ -1721,12 +2194,13 @@ document.querySelector('#file-input').onchange = (e) => {
   e.target.value = '';
 };
 
-// Track changes in editor
+// Track changes in editor and trigger auto-save
 editorEl.addEventListener('input', () => {
   if (!state.isModified) {
     state.isModified = true;
     updateTitleBar();
   }
+  triggerAutoSave();
 });
 
 // Keyboard shortcuts (Ctrl+S for save, Space for pause, F-keys)
@@ -1745,7 +2219,7 @@ window.addEventListener('keydown', (e) => {
   // Ctrl+O / Cmd+O (Open)
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
     e.preventDefault();
-    openFile();
+    confirmUnsavedChanges(() => openFile());
     return;
   }
 
@@ -1780,5 +2254,15 @@ viewportContainer.addEventListener('dblclick', () => {
   updateHud(sim3d.isRunning ? 'Running...' : 'Paused');
 });
 
-// Initial Load: Blank programming area and 2D view by default
-dispatchAction('file-new');
+// Initial UI & Auto-Save Setup
+updateAutoSaveUI();
+
+// Initial Clean App Startup: Start with clean template in 2D Front View (no auto-loaded sample)
+state.currentFileHandle = null;
+state.currentFileName = 'Untitled.nc';
+state.isModified = false;
+editorEl.value = DEFAULT_CLEAN_TEMPLATES['turn'];
+recompileAndReset();
+updateTitleBar();
+sim3d.setView('front');
+updateHud('Ready (New Program)');

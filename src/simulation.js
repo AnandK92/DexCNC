@@ -744,20 +744,22 @@ export class CNCSimulator3D {
       );
     }
 
-    // Circular ring outlines on turned steps / shoulders
+    // Circular ring outlines on turned steps / sharp shoulders:
+    // Only where there is an actual steep shoulder step (diff > 0.75mm)
+    // AND strictly within the machined interior (never drawing lines across the raw box planar faces)
     for (let i = 0; i < n - 1; i++) {
       const diff = Math.abs(radii[i] - radii[i + 1]);
-      if (diff > 0.25) {
-        const stepZ = -i * res + offsetZ;
-        const stepR = Math.max(radii[i], radii[i + 1]);
+      if (diff > Math.max(res * 1.5, 0.75)) {
+        const stepZ = -(i + 1) * res + offsetZ;
+        const stepR = Math.min(radii[i], radii[i + 1]);
         for (let j = 0; j < nTheta; j++) {
           const nextJ = (j + 1) % nTheta;
-          const r0 = Math.min(rBoxTable[j], stepR);
-          const r1 = Math.min(rBoxTable[nextJ], stepR);
-          addEdgeLine(
-            [stepZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX],
-            [stepZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX]
-          );
+          if (stepR < rBoxTable[j] - 0.25 && stepR < rBoxTable[nextJ] - 0.25) {
+            addEdgeLine(
+              [stepZ, stepR * cosTable[j] + offsetY, stepR * sinTable[j] + offsetX],
+              [stepZ, stepR * cosTable[nextJ] + offsetY, stepR * sinTable[nextJ] + offsetX]
+            );
+          }
         }
       }
     }
@@ -784,30 +786,6 @@ export class CNCSimulator3D {
             [z1, r1 * cosTable[cj] + offsetY, r1 * sinTable[cj] + offsetX]
           );
         }
-      }
-    }
-
-    // Turned cylinder profile silhouettes (top & bottom generators) wherever cut
-    const jApexTop = 0;
-    const jApexBot = Math.floor(nTheta / 2);
-    for (let i = 0; i < n - 1; i++) {
-      const isCutTop = radii[i] < rBoxTable[jApexTop] - 0.05;
-      if (isCutTop) {
-        const z0 = -i * res + offsetZ;
-        const z1 = -(i + 1) * res + offsetZ;
-        addEdgeLine(
-          [z0, radii[i] * cosTable[jApexTop] + offsetY, radii[i] * sinTable[jApexTop] + offsetX],
-          [z1, radii[i + 1] * cosTable[jApexTop] + offsetY, radii[i + 1] * sinTable[jApexTop] + offsetX]
-        );
-      }
-      const isCutBot = radii[i] < rBoxTable[jApexBot] - 0.05;
-      if (isCutBot) {
-        const z0 = -i * res + offsetZ;
-        const z1 = -(i + 1) * res + offsetZ;
-        addEdgeLine(
-          [z0, radii[i] * cosTable[jApexBot] + offsetY, radii[i] * sinTable[jApexBot] + offsetX],
-          [z1, radii[i + 1] * cosTable[jApexBot] + offsetY, radii[i + 1] * sinTable[jApexBot] + offsetX]
-        );
       }
     }
 
