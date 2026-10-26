@@ -62,12 +62,12 @@ export class CNCSimulator3D {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.container.appendChild(this.renderer.domElement);
 
-    // 1. Ambient & Radiant Cyan Fill (Ensures shadows remain luminous, vibrant cyan)
-    const amb = new THREE.AmbientLight(0xffffff, 0.85);
-    this.scene.add(amb);
+    // 1. Ambient & Radiant Lights (adapted per mode)
+    this.amb = new THREE.AmbientLight(0xffffff, 0.85);
+    this.scene.add(this.amb);
 
-    const cyanAmb = new THREE.AmbientLight(0x00e5ff, 0.55);
-    this.scene.add(cyanAmb);
+    this.cyanAmb = new THREE.AmbientLight(0x00e5ff, 0.55);
+    this.scene.add(this.cyanAmb);
 
     // 2. Camera Headlamp: Guarantees that whatever surface the user views is brightly lit
     this.cameraLight = new THREE.DirectionalLight(0xffffff, 0.85);
@@ -77,19 +77,19 @@ export class CNCSimulator3D {
     this.scene.add(this.orthoCamera);
 
     // 3. Studio Key Light (Front-Top-Right of workpiece, shining directly on face and contour)
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.95);
-    keyLight.position.set(200, 250, 180);
-    this.scene.add(keyLight);
+    this.keyLight = new THREE.DirectionalLight(0xffffff, 0.95);
+    this.keyLight.position.set(200, 250, 180);
+    this.scene.add(this.keyLight);
 
     // 4. Studio Soft Fill from bottom-front
-    const fillLight = new THREE.DirectionalLight(0x38e8ff, 0.5);
-    fillLight.position.set(100, -150, 120);
-    this.scene.add(fillLight);
+    this.fillLight = new THREE.DirectionalLight(0x38e8ff, 0.5);
+    this.fillLight.position.set(100, -150, 120);
+    this.scene.add(this.fillLight);
 
     // 5. Back rim light
-    const rimLight = new THREE.DirectionalLight(0x70f5ff, 0.5);
-    rimLight.position.set(-200, 180, -150);
-    this.scene.add(rimLight);
+    this.rimLight = new THREE.DirectionalLight(0x70f5ff, 0.5);
+    this.rimLight.position.set(-200, 180, -150);
+    this.scene.add(this.rimLight);
 
     // Coordinate Triad
     this.createTriad();
@@ -358,51 +358,90 @@ export class CNCSimulator3D {
 
     const { colorTex, bumpTex } = this.createLatheFinishTextures();
 
-    const stockMat = new THREE.MeshPhongMaterial({
-      color: 0x00e5ff,        // Pure vibrant electric cyan matching user's image
-      emissive: 0x008da6,     // Bright cyan radiance keeping shadows luminous (no muddy dark tones)
-      specular: 0x80f8ff,     // Soft cyan specular luster
-      shininess: 18,          // Satin / semi-matte CAD finish (eliminates artificial AI glossy hotspots)
+    // Lathe material: Vibrant electric cyan with turned concentric feed lines
+    const latheStockMat = new THREE.MeshPhongMaterial({
+      color: 0x00e5ff,
+      emissive: 0x008da6,
+      specular: 0x80f8ff,
+      shininess: 18,
       map: colorTex,
       bumpMap: bumpTex,
-      bumpScale: 0.022,       // Authentic crisp concentric turned feed grooves
+      bumpScale: 0.022,
       side: THREE.DoubleSide
     });
+
+    // Mill material: Precision-machined industrial steel/aluminum blue-gray (matching genuine seeNC)
+    const millStockMat = new THREE.MeshStandardMaterial({
+      color: 0x7695a8,        // Industrial CNC blue-gray cold-rolled steel/aluminum
+      roughness: 0.48,        // Semi-matte precision machined surface
+      metalness: 0.28,        // Authentic metallic sheen without plastic gloss
+      side: THREE.DoubleSide
+    });
+
+    // Configure lighting specifically for current mode
+    if (this.mode === 'mill') {
+      if (this.cyanAmb) this.cyanAmb.intensity = 0.0; // Remove neon cyan wash
+      if (this.amb) this.amb.intensity = 0.65;
+      if (this.keyLight) {
+        this.keyLight.color.setHex(0xffffff);
+        this.keyLight.intensity = 1.25;
+        this.keyLight.position.set(180, 280, 160);
+      }
+      if (this.fillLight) {
+        this.fillLight.color.setHex(0xdceef8);
+        this.fillLight.intensity = 0.45;
+        this.fillLight.position.set(-120, 140, -100);
+      }
+      if (this.rimLight) {
+        this.rimLight.color.setHex(0xa8d0e6);
+        this.rimLight.intensity = 0.35;
+      }
+    } else {
+      if (this.cyanAmb) this.cyanAmb.intensity = 0.55;
+      if (this.amb) this.amb.intensity = 0.85;
+      if (this.fillLight) {
+        this.fillLight.color.setHex(0x38e8ff);
+        this.fillLight.intensity = 0.5;
+      }
+      if (this.rimLight) {
+        this.rimLight.color.setHex(0x70f5ff);
+        this.rimLight.intensity = 0.5;
+      }
+    }
 
     if (this.mode === 'turn') {
       const res = 0.5; // 0.5mm station resolution along Z
       const nStations = Math.ceil(this.blank.l / res) + 1;
-      // Initialize with large radius so uncut stock is purely rectangular cuboid
       const initialRadii = new Float32Array(nStations).fill(9999);
       this.turnStock = { res, n: nStations, radii: initialRadii };
 
-      this.stockMesh = new THREE.Mesh(new THREE.BufferGeometry(), stockMat);
+      this.stockMesh = new THREE.Mesh(new THREE.BufferGeometry(), latheStockMat);
       this.scene.add(this.stockMesh);
 
-      // Tool Mesh: Carbide insert holder (No chuck)
+      // Tool Mesh: Carbide insert holder
       this.createLatheToolMesh();
 
       const maxDim = Math.max(this.blank.w || this.blank.d || 80, this.blank.h || this.blank.d || 80, this.blank.l);
       this.target.set(-this.blank.l / 2, 0, 0);
       this.distance = maxDim * 2.3;
-      this.setView('front'); // 2D view by default
+      this.setView('front');
       this.updateTurnMesh();
     } else {
-      // Mill Mode
-      const res = Math.max(1.0, Math.max(this.blank.x, this.blank.y) / 100);
+      // Mill Mode: High-density 0.5mm resolution for smooth curves & crisp features
+      const res = Math.max(0.4, Math.max(this.blank.x, this.blank.y) / 200);
       const nx = Math.ceil(this.blank.x / res) + 1;
       const ny = Math.ceil(this.blank.y / res) + 1;
       const initialHeights = new Float32Array(nx * ny).fill(0); // Top surface is Z=0
       this.millStock = { res, nx, ny, heights: initialHeights };
 
-      this.stockMesh = new THREE.Mesh(new THREE.BufferGeometry(), stockMat);
+      this.stockMesh = new THREE.Mesh(new THREE.BufferGeometry(), millStockMat);
       this.scene.add(this.stockMesh);
 
       this.createMillToolMesh(5); // Default Ø10mm (R=5)
 
       this.target.set(this.blank.x / 2, -this.blank.z / 2, -this.blank.y / 2);
       this.distance = Math.max(this.blank.x, this.blank.y) * 2.2;
-      this.setView('front'); // 2D view by default
+      this.setView('iso'); // Isometric 3D view for mill
       this.updateMillMesh();
     }
 
@@ -501,18 +540,25 @@ export class CNCSimulator3D {
     }
     const group = new THREE.Group();
 
-    // Spindle Holder (silver/grey)
-    const holderGeo = new THREE.CylinderGeometry(12, 8, 20, 24);
-    const holderMat = new THREE.MeshStandardMaterial({ color: 0x4f5866, metalness: 0.6, roughness: 0.3 });
+    // Spindle Chuck / Arbor Collar (Industrial dark tool steel)
+    const holderGeo = new THREE.CylinderGeometry(11, 7.5, 18, 32);
+    const holderMat = new THREE.MeshStandardMaterial({ color: 0x374151, metalness: 0.8, roughness: 0.35 });
     const holder = new THREE.Mesh(holderGeo, holderMat);
-    holder.position.y = 20;
+    holder.position.y = 28;
     group.add(holder);
 
-    // Carbide Cutter Flutes (gold/bright metallic)
-    const cutterGeo = new THREE.CylinderGeometry(toolRadius, toolRadius, 20, 24);
-    const cutterMat = new THREE.MeshStandardMaterial({ color: 0xe0ad36, metalness: 0.7, roughness: 0.3 });
+    // Tool Shank (Polished tool steel)
+    const shankGeo = new THREE.CylinderGeometry(toolRadius, toolRadius, 14, 32);
+    const shankMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af, metalness: 0.85, roughness: 0.25 });
+    const shank = new THREE.Mesh(shankGeo, shankMat);
+    shank.position.y = 17;
+    group.add(shank);
+
+    // Carbide Cutter Body (Gold / Brass TiN coating matching genuine seeNC)
+    const cutterGeo = new THREE.CylinderGeometry(toolRadius, toolRadius, 20, 32);
+    const cutterMat = new THREE.MeshStandardMaterial({ color: 0xc89632, metalness: 0.75, roughness: 0.30 });
     const cutter = new THREE.Mesh(cutterGeo, cutterMat);
-    cutter.position.y = 5;
+    cutter.position.y = 10; // Tip of cutter sits at y = 0
     group.add(cutter);
 
     this.toolMesh = group;
@@ -637,40 +683,78 @@ export class CNCSimulator3D {
     const addTri = (a, b, c) => {
       addVert(a); addVert(b); addVert(c);
     };
+    const addQuad = (a, b, c, d) => {
+      addTri(a, b, c);
+      addTri(a, c, d);
+    };
 
-    // Top milled surface
+    // 1. Horizontal surfaces: Each grid cell is drawn flat at its own height (with split normals)
+    // Vertical 90-degree step walls are explicitly created at every height change
     for (let j = 0; j < ny - 1; j++) {
+      const y0 = getY(j);
+      const y1 = getY(j + 1);
       for (let i = 0; i < nx - 1; i++) {
-        const A = [getX(i), getY(j), heights[j * nx + i]];
-        const Bpt = [getX(i + 1), getY(j), heights[j * nx + i + 1]];
-        const C = [getX(i + 1), getY(j + 1), heights[(j + 1) * nx + i + 1]];
-        const D = [getX(i), getY(j + 1), heights[(j + 1) * nx + i]];
-        addTri(A, Bpt, C);
-        addTri(A, C, D);
+        const x0 = getX(i);
+        const x1 = getX(i + 1);
+        const idx = j * nx + i;
+        const h = heights[idx];
+
+        // Horizontal flat face for this cell
+        addQuad([x0, y0, h], [x1, y0, h], [x1, y1, h], [x0, y1, h]);
+
+        // Vertical step wall in +X direction (between this cell and right neighbor)
+        if (i < nx - 2) {
+          const hRight = heights[idx + 1];
+          const diff = h - hRight;
+          if (diff > 0.001) {
+            // Step down to the right (faces +X)
+            addQuad([x1, y0, h], [x1, y1, h], [x1, y1, hRight], [x1, y0, hRight]);
+          } else if (diff < -0.001) {
+            // Step up to the right (faces -X)
+            addQuad([x1, y1, hRight], [x1, y0, hRight], [x1, y0, h], [x1, y1, h]);
+          }
+        }
+
+        // Vertical step wall in +Y direction (between this cell and top neighbor)
+        if (j < ny - 2) {
+          const hTop = heights[(j + 1) * nx + i];
+          const diff = h - hTop;
+          if (diff > 0.001) {
+            // Step down into +Y (faces +Y)
+            addQuad([x1, y1, h], [x0, y1, h], [x0, y1, hTop], [x1, y1, hTop]);
+          } else if (diff < -0.001) {
+            // Step up into +Y (faces -Y)
+            addQuad([x0, y1, hTop], [x1, y1, hTop], [x1, y1, h], [x0, y1, h]);
+          }
+        }
       }
     }
 
-    // Side walls
-    const addWall = (topA, topB) => {
-      const botA = [topA[0], topA[1], floorZ];
-      const botB = [topB[0], topB[1], floorZ];
-      addTri(topA, topB, botB);
-      addTri(topA, botB, botA);
-    };
-
-    const rowLast = (ny - 1) * nx;
+    // 2. Exterior stock side walls (from current surface height down to floorZ)
     for (let i = 0; i < nx - 1; i++) {
-      addWall([getX(i), 0, heights[i]], [getX(i + 1), 0, heights[i + 1]]);
-      addWall([getX(i + 1), B.y, heights[rowLast + i + 1]], [getX(i), B.y, heights[rowLast + i]]);
-    }
-    for (let j = 0; j < ny - 1; j++) {
-      addWall([0, getY(j + 1), heights[(j + 1) * nx]], [0, getY(j), heights[j * nx]]);
-      addWall([B.x, getY(j), heights[j * nx + nx - 1]], [B.x, getY(j + 1), heights[(j + 1) * nx + nx - 1]]);
+      const x0 = getX(i);
+      const x1 = getX(i + 1);
+      // Front wall (Y = 0)
+      const hFront = heights[i];
+      addQuad([x0, 0, floorZ], [x1, 0, floorZ], [x1, 0, hFront], [x0, 0, hFront]);
+      // Back wall (Y = B.y)
+      const hBack = heights[(ny - 2) * nx + i];
+      addQuad([x1, B.y, floorZ], [x0, B.y, floorZ], [x0, B.y, hBack], [x1, B.y, hBack]);
     }
 
-    // Bottom plate
-    addTri([0, 0, floorZ], [B.x, 0, floorZ], [B.x, B.y, floorZ]);
-    addTri([0, 0, floorZ], [B.x, B.y, floorZ], [0, B.y, floorZ]);
+    for (let j = 0; j < ny - 1; j++) {
+      const y0 = getY(j);
+      const y1 = getY(j + 1);
+      // Left wall (X = 0)
+      const hLeft = heights[j * nx];
+      addQuad([0, y1, floorZ], [0, y0, floorZ], [0, y0, hLeft], [0, y1, hLeft]);
+      // Right wall (X = B.x)
+      const hRight = heights[j * nx + (nx - 2)];
+      addQuad([B.x, y0, floorZ], [B.x, y1, floorZ], [B.x, y1, hRight], [B.x, y0, hRight]);
+    }
+
+    // 3. Bottom plate (Z = floorZ)
+    addQuad([0, 0, floorZ], [0, B.y, floorZ], [B.x, B.y, floorZ], [B.x, 0, floorZ]);
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
@@ -731,7 +815,7 @@ export class CNCSimulator3D {
       }
 
       if (this.toolMesh) {
-        this.toolMesh.position.set(x, z + 5, -y);
+        this.toolMesh.position.set(x, z, -y);
       }
     }
   }

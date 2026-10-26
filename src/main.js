@@ -88,6 +88,9 @@ class AppState {
   constructor() {
     this.mode = 'turn'; // 'turn' or 'mill'
     this.machineName = 'Fanuc 0iT - Type A';
+    this.currentFileHandle = null;
+    this.currentFileName = 'Untitled.nc';
+    this.isModified = false;
     this.blank = {
       w: 80,
       h: 80,
@@ -138,8 +141,10 @@ appContainer.innerHTML = `
       <button class="menu-btn">File</button>
       <div class="dropdown-menu">
         <div class="dropdown-item" data-act="file-new">New Program</div>
-        <div class="dropdown-item" data-act="file-open">Open...</div>
-        <div class="dropdown-item" data-act="file-save">Save</div>
+        <div class="dropdown-item" data-act="file-open">Open... <span style="font-size:10px;color:#888;margin-left:12px;">Ctrl+O</span></div>
+        <div class="dropdown-item" data-act="file-save">Save <span style="font-size:10px;color:#888;margin-left:12px;">Ctrl+S</span></div>
+        <div class="dropdown-item" data-act="file-save-as">Save As... <span style="font-size:10px;color:#888;margin-left:12px;">Ctrl+Shift+S</span></div>
+        <div class="dropdown-sep"></div>
         <div class="dropdown-item" data-act="file-sample">Load Default Sample</div>
         <div class="dropdown-sep"></div>
         <div class="dropdown-item" data-act="file-export-stl">Export 3D STL (Part)</div>
@@ -342,6 +347,102 @@ function loadProgram(code) {
   recompileAndReset();
 }
 
+function updateTitleBar() {
+  const isTurn = state.mode === 'turn';
+  const modStar = state.isModified ? ' *' : '';
+  const titleText = `${state.currentFileName}${modStar} — seeNC ${isTurn ? 'Turn (Fanuc 0i-T)' : 'Mill (Fanuc 0i-M)'}`;
+  const el = document.querySelector('#win-title-text');
+  if (el) el.textContent = titleText;
+}
+
+async function saveFile(forceSaveAs = false) {
+  const gcodeContent = editorEl.value;
+  const isTurn = state.mode === 'turn';
+  const defaultExt = '.nc';
+  const isNew = !state.currentFileHandle || !state.currentFileName || state.currentFileName.startsWith('Untitled');
+  const suggestedName = state.currentFileName && !state.currentFileName.startsWith('Untitled')
+    ? state.currentFileName
+    : (isTurn ? 'Program_Turn.nc' : 'Program_Mill.nc');
+
+  // Modern File System Access API (writes directly in-place on Chrome/Edge)
+  if ('showSaveFilePicker' in window) {
+    try {
+      if (forceSaveAs || isNew) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: suggestedName,
+          types: [{
+            description: 'CNC G-Code Programs (*.nc, *.txt, *.cnc)',
+            accept: {
+              'text/plain': ['.nc', '.txt', '.cnc', '.gcode']
+            }
+          }]
+        });
+        state.currentFileHandle = handle;
+        state.currentFileName = handle.name;
+      }
+
+      const writable = await state.currentFileHandle.createWritable();
+      await writable.write(gcodeContent);
+      await writable.close();
+
+      state.isModified = false;
+      updateTitleBar();
+      updateHud(`✔ Saved: ${state.currentFileName}`);
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // User cancelled dialog
+      console.warn('File System Access API failed, falling back to download:', err);
+    }
+  }
+
+  // Fallback for browsers without File System Access API
+  if (forceSaveAs || isNew) {
+    const promptedName = prompt('Enter file name to save:', suggestedName);
+    if (!promptedName) return;
+    state.currentFileName = promptedName.includes('.') ? promptedName : promptedName + defaultExt;
+  }
+
+  const blob = new Blob([gcodeContent], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = state.currentFileName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+
+  state.isModified = false;
+  updateTitleBar();
+  updateHud(`✔ Saved: ${state.currentFileName}`);
+}
+
+async function openFile() {
+  if ('showOpenFilePicker' in window) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{
+          description: 'CNC G-Code Programs (*.nc, *.txt, *.cnc, *.gcode)',
+          accept: {
+            'text/plain': ['.nc', '.txt', '.cnc', '.gcode']
+          }
+        }]
+      });
+      const file = await handle.getFile();
+      const text = await file.text();
+      state.currentFileHandle = handle;
+      state.currentFileName = file.name;
+      state.isModified = false;
+      loadProgram(text);
+      updateTitleBar();
+      updateHud(`Opened: ${file.name}`);
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      console.warn('Fallback to file input:', err);
+    }
+  }
+
+  document.querySelector('#file-input').click();
+}
+
 function switchMode(newMode) {
   if (newMode === state.mode) return;
   state.mode = newMode;
@@ -349,13 +450,7 @@ function switchMode(newMode) {
 
   const isTurn = newMode === 'turn';
 
-  // Window title text
-  const titleEl = document.querySelector('#win-title-text');
-  if (titleEl) {
-    titleEl.textContent = isTurn
-      ? 'seeNC Turn (Fanuc 0i-T)'
-      : 'seeNC Mill (Fanuc 0i-M)';
-  }
+  updateTitleBar();
 
   // Status bar mode text
   const statMode = document.querySelector('#stat-mode');
@@ -720,31 +815,35 @@ function dispatchAction(act) {
       break;
 
     case 'file-new':
-      document.querySelector('#win-title-text').textContent = state.mode === 'turn'
-        ? 'Untitled.nc — seeNC Turn (Fanuc 0i-T)'
-        : 'Untitled.nc — seeNC Mill (Fanuc 0i-M)';
+      state.currentFileHandle = null;
+      state.currentFileName = 'Untitled.nc';
+      state.isModified = false;
       editorEl.value = '';
       recompileAndReset();
+      updateTitleBar();
       sim3d.setView(state.mode === 'turn' ? 'front' : 'iso');
       updateHud('Ready (New File)');
       break;
 
     case 'file-sample':
+      state.currentFileHandle = null;
+      state.currentFileName = state.mode === 'turn' ? 'G71_Roughing_Sample.nc' : '3Axis_Mill_Drill_Sample.nc';
+      state.isModified = false;
       loadProgram(SAMPLES[state.mode]);
+      updateTitleBar();
       break;
 
     case 'file-open':
-      document.querySelector('#file-input').click();
+      openFile();
       break;
 
-    case 'file-save': {
-      const blob = new Blob([editorEl.value], { type: 'text/plain' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = state.mode === 'turn' ? 'Program_Turn.nc' : 'Program_Mill.nc';
-      a.click();
+    case 'file-save':
+      saveFile(false);
       break;
-    }
+
+    case 'file-save-as':
+      saveFile(true);
+      break;
 
     case 'file-export-stl':
       alert('3D Workpiece exported as STL (feature simulated).');
@@ -1585,21 +1684,52 @@ if (modeQuickSelect) {
   };
 }
 
-// File open input
+// File open input fallback
 document.querySelector('#file-input').onchange = (e) => {
   const file = e.target.files[0];
   if (file) {
+    state.currentFileHandle = null;
+    state.currentFileName = file.name;
+    state.isModified = false;
     const reader = new FileReader();
     reader.onload = (evt) => {
       loadProgram(evt.target.result);
+      updateTitleBar();
+      updateHud(`Opened: ${file.name}`);
     };
     reader.readAsText(file);
   }
   e.target.value = '';
 };
 
-// Spacebar to pause / resume toggle as shown in screenshot
+// Track changes in editor
+editorEl.addEventListener('input', () => {
+  if (!state.isModified) {
+    state.isModified = true;
+    updateTitleBar();
+  }
+});
+
+// Keyboard shortcuts (Ctrl+S for save, Space for pause, F-keys)
 window.addEventListener('keydown', (e) => {
+  // Ctrl+S / Cmd+S (Save / Save As)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if (e.shiftKey) {
+      saveFile(true);  // Ctrl+Shift+S -> Save As
+    } else {
+      saveFile(false); // Ctrl+S -> Save
+    }
+    return;
+  }
+
+  // Ctrl+O / Cmd+O (Open)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+    e.preventDefault();
+    openFile();
+    return;
+  }
+
   // If editing inside textarea, allow standard typing
   if (document.activeElement === editorEl) return;
 
