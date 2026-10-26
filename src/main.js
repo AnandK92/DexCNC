@@ -2226,5 +2226,5 @@ state.isModified = false;
 editorEl.value = '';
 recompileAndReset();
 updateTitleBar();
-sim3d.setView('front');
+sim3d.setView(state.mode === 'turn' ? 'front' : 'top');
 updateHud('Ready (New Program)');

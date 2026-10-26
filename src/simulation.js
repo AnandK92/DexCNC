@@ -455,7 +455,7 @@ export class CNCSimulator3D {
 
       this.target.set(this.blank.x / 2, -this.blank.z / 2, -this.blank.y / 2);
       this.distance = Math.max(this.blank.x, this.blank.y) * 2.2;
-      this.setView('iso'); // Isometric 3D view for mill
+      this.setView('top'); // Default Top view (XY) for mill
       this.updateMillMesh();
     }
 
