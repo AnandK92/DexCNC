@@ -10,7 +10,7 @@ const SAMPLE_LIBRARY = {
       id: 'turn-g71-roughing',
       title: 'OD Multi-Step Shaft Roughing & Finishing (G71/G70)',
       desc: 'Canned roughing cycle with stepped diameters (36, 46, 60, 75mm), 45° chamfers, convex and concave radii, followed by G70 finishing pass.',
-      blank: { w: 80, h: 80, d: 80, l: 100, thickness: 80, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
+      blank: { stockType: 'cylinder', od: 80, w: 80, h: 80, d: 80, l: 100, thickness: 80, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
       tools: 'T0101 (Roughing PCLNL R0.8), T0303 (Grooving 2mm)',
       svg: `<svg viewBox="0 0 200 100" class="sample-preview-svg" xmlns="http://www.w3.org/2000/svg">
         <rect width="200" height="100" fill="#0f172a" rx="4"/>
@@ -63,7 +63,7 @@ M30
       id: 'turn-spherical-contour',
       title: 'Spherical Ball-Nose & Taper Contour',
       desc: 'Precision spherical dome nose turned with G02 circular interpolation leading into a smooth taper and straight shoulder.',
-      blank: { w: 60, h: 60, d: 60, l: 80, thickness: 60, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
+      blank: { stockType: 'cylinder', od: 60, w: 60, h: 60, d: 60, l: 80, thickness: 60, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
       tools: 'T0101 (Finishing Tool VNMG R0.4)',
       svg: `<svg viewBox="0 0 200 100" class="sample-preview-svg" xmlns="http://www.w3.org/2000/svg">
         <rect width="200" height="100" fill="#0f172a" rx="4"/>
@@ -103,7 +103,7 @@ M30
       id: 'turn-groove-thread',
       title: 'OD Grooving & O-Ring Reliefs',
       desc: 'Multiple snap-ring / O-ring relief grooves turned with precision dwell timing (G04) across cylindrical stepped body.',
-      blank: { w: 50, h: 50, d: 50, l: 85, thickness: 50, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
+      blank: { stockType: 'cylinder', od: 50, w: 50, h: 50, d: 50, l: 85, thickness: 50, bore: 0, centerX: 0, centerY: 0, centerZ: 0 },
       tools: 'T0101 (Turning), T0303 (Grooving 3mm)',
       svg: `<svg viewBox="0 0 200 100" class="sample-preview-svg" xmlns="http://www.w3.org/2000/svg">
         <rect width="200" height="100" fill="#0f172a" rx="4"/>
@@ -306,13 +306,15 @@ class ModeSession {
     this.isModified = false;
 
     if (mode === 'turn') {
-      // Standard 100mm x 100mm Blank for Turning (100mm x 100mm x 100mm Length)
+      // Standard Cylindrical Bar for Turning (Default: ⌀80mm OD x 100mm Length)
       this.blank = {
-        w: 100,
-        h: 100,
-        d: 100,
+        stockType: 'cylinder', // 'cylinder' (default) or 'box'
+        od: 80,
+        w: 80,
+        h: 80,
+        d: 80,
         l: 100,
-        thickness: 100,
+        thickness: 80,
         bore: 0,
         centerX: 0,
         centerY: 0,
@@ -1187,22 +1189,22 @@ function triggerAutoSave() {
 
 // ── DexCNC Interactive Workpiece Blueprint Schematic (SVG) ──
 function renderBlankSchematicSVG(mode, params) {
-  const { w, h, l, bore, cx, cy, cz } = params;
+  const { stockType, od, w, h, l, bore, cx, cy, cz } = params;
   const isTurn = mode === 'turn';
+  const isCylinder = isTurn && stockType !== 'box';
 
   const ox = 180;
   const oy = 130;
 
-  // Visual scaling to keep drawing clean and well-proportioned
-  const maxDim = Math.max(l, Math.max(w, h), 10);
+  const dia = od || w || 80;
+  const maxDim = isCylinder ? Math.max(l, dia, 10) : Math.max(l, Math.max(w, h), 10);
   const scale = 110 / maxDim;
 
   const bw = Math.max(25, l * scale);
-  const bh = Math.max(20, h * scale);
-  const bdepth = Math.max(12, w * scale * 0.35);
+  const bh = Math.max(20, (isCylinder ? dia : h) * scale);
+  const bdepth = Math.max(12, (isCylinder ? dia : w) * scale * 0.35);
 
   // Blank position relative to G54 Datum Origin (ox, oy)
-  // cz offsets the front face from datum
   const blankRight = ox - cz * scale;
   const blankLeft = blankRight - bw;
   const blankTop = oy - (bh / 2) - cy * scale;
@@ -1254,22 +1256,38 @@ function renderBlankSchematicSVG(mode, params) {
       <text x="${ox + 55}" y="${oy - 36}" fill="#22c55e" font-size="10" font-family="Consolas, monospace" font-weight="bold">+Y</text>
 
       <!-- Blank Workpiece Body -->
-      <!-- 3D Isometric Extension -->
-      <polygon points="${blankLeft},${blankTop} ${blankLeft + bdepth},${blankTop - bdepth*0.5} ${blankRight + bdepth},${blankTop - bdepth*0.5} ${blankRight},${blankTop}"
-               fill="#0ea5e922" stroke="#38bdf8" stroke-width="1.2" />
-      <polygon points="${blankRight},${blankTop} ${blankRight + bdepth},${blankTop - bdepth*0.5} ${blankRight + bdepth},${blankBottom - bdepth*0.5} ${blankRight},${blankBottom}"
-               fill="#0284c733" stroke="#38bdf8" stroke-width="1.2" />
+      ${isCylinder ? `
+        <!-- Lathe Round Cylindrical Bar -->
+        <!-- Rear elliptical end cap -->
+        <ellipse cx="${blankLeft}" cy="${oy - cy * scale}" rx="${dia * scale * 0.25}" ry="${(dia * scale) / 2}"
+                 fill="#0ea5e922" stroke="#38bdf8" stroke-width="1.4" />
+        <!-- Cylinder longitudinal body -->
+        <path d="M ${blankLeft} ${blankTop} L ${blankRight} ${blankTop} A ${dia * scale * 0.25} ${(dia * scale) / 2} 0 0 1 ${blankRight} ${blankBottom} L ${blankLeft} ${blankBottom} A ${dia * scale * 0.25} ${(dia * scale) / 2} 0 0 1 ${blankLeft} ${blankTop} Z"
+              fill="#06b6d425" stroke="#00e5ff" stroke-width="1.6" />
+        <!-- Front circular face (G54 datum face) -->
+        <ellipse cx="${blankRight}" cy="${oy - cy * scale}" rx="${dia * scale * 0.25}" ry="${(dia * scale) / 2}"
+                 fill="#06b6d444" stroke="#00e5ff" stroke-width="1.8" />
+        <!-- Spindle Centerline -->
+        <line x1="${blankLeft - 10}" y1="${oy - cy * scale}" x2="${blankRight + 15}" y2="${oy - cy * scale}"
+              stroke="#38bdf8" stroke-width="1" stroke-dasharray="8,3,2,3" />
+      ` : `
+        <!-- 3D Isometric Rectangular Box Extension -->
+        <polygon points="${blankLeft},${blankTop} ${blankLeft + bdepth},${blankTop - bdepth*0.5} ${blankRight + bdepth},${blankTop - bdepth*0.5} ${blankRight},${blankTop}"
+                 fill="#0ea5e922" stroke="#38bdf8" stroke-width="1.2" />
+        <polygon points="${blankRight},${blankTop} ${blankRight + bdepth},${blankTop - bdepth*0.5} ${blankRight + bdepth},${blankBottom - bdepth*0.5} ${blankRight},${blankBottom}"
+                 fill="#0284c733" stroke="#38bdf8" stroke-width="1.2" />
 
-      <!-- Main Blank Face (Front Projection) -->
-      <rect x="${blankLeft}" y="${blankTop}" width="${bw}" height="${bh}"
-            fill="#06b6d433" stroke="#00e5ff" stroke-width="1.8" rx="1" />
+        <!-- Main Blank Face (Front Projection) -->
+        <rect x="${blankLeft}" y="${blankTop}" width="${bw}" height="${bh}"
+              fill="#06b6d433" stroke="#00e5ff" stroke-width="1.8" rx="1" />
+      `}
 
       ${bore > 0 ? `
         <!-- Hollow Inner Bore Feature -->
         <rect x="${blankLeft}" y="${oy - (bore*scale/2)}" width="${bw}" height="${bore*scale}"
               fill="#0f172a" stroke="#f59e0b" stroke-width="1.4" stroke-dasharray="4,2" />
         <text x="${blankLeft + bw/2}" y="${oy + 3}" fill="#fbbf24" font-size="9" font-family="Consolas, monospace" text-anchor="middle">
-          Bore Ø${bore}mm (Wall T=${((h-bore)/2).toFixed(1)}mm)
+          Bore Ø${bore}mm (Wall T=${(((isCylinder ? dia : h) - bore)/2).toFixed(1)}mm)
         </text>
       ` : ''}
 
@@ -1282,12 +1300,12 @@ function renderBlankSchematicSVG(mode, params) {
         L = ${l} mm
       </text>
 
-      <!-- Thickness / Height H dimension (left) -->
+      <!-- Outer Diameter or Height dimension (left) -->
       <line x1="${blankLeft - 10}" y1="${blankTop}" x2="${blankLeft - 10}" y2="${blankBottom}" stroke="#94a3b8" stroke-width="1" marker-start="url(#dim-arrow)" marker-end="url(#dim-arrow)" />
       <line x1="${blankLeft}" y1="${blankTop}" x2="${blankLeft - 14}" y2="${blankTop}" stroke="#64748b" stroke-width="0.8" />
       <line x1="${blankLeft}" y1="${blankBottom}" x2="${blankLeft - 14}" y2="${blankBottom}" stroke="#64748b" stroke-width="0.8" />
       <text x="${blankLeft - 14}" y="${blankTop + bh/2 + 3}" fill="#e2e8f0" font-size="9" font-family="Consolas, monospace" text-anchor="end" font-weight="bold">
-        ${isTurn ? `T = ${h} mm` : `Z-Thick = ${h} mm`}
+        ${isCylinder ? `⌀ ${dia} mm` : (isTurn ? `T = ${h} mm` : `Z-Thick = ${h} mm`)}
       </text>
 
       <!-- Workpiece Datum Origin Target Symbol (G54: 0,0,0) -->
@@ -1378,19 +1396,40 @@ function dispatchAction(act) {
     case 'open-blank': {
       const b = state.blank;
       const isTurn = state.mode === 'turn';
+      const isBox = isTurn && b.stockType === 'box';
 
       const bodyHTML = isTurn ? `
         <div class="blank-dialog-container">
           <div class="blank-fields-col">
-            <div class="modal-section-title">1. Blank Dimensions (mm)</div>
+            <div class="modal-section-title">1. Stock Geometry & Dimensions (mm)</div>
             <div class="modal-field">
-              <label>Width (W):</label>
-              <input type="number" id="inp-blank-w" value="${b.w || b.d || 80}" min="10" max="300" step="1">
+              <label>Stock Geometry:</label>
+              <select id="inp-blank-shape" style="background:#1e293b; color:#38bdf8; border:1px solid #0284c7; border-radius:4px; padding:6px; font-weight:bold; font-size:12px; width:100%;">
+                <option value="cylinder" ${!isBox ? 'selected' : ''}>🔘 Cylindrical / Round Bar (Default)</option>
+                <option value="box" ${isBox ? 'selected' : ''}>⬛ Rectangular / Square Block</option>
+              </select>
             </div>
-            <div class="modal-field">
-              <label>Thickness / Height (T / H):</label>
-              <input type="number" id="inp-blank-h" value="${b.h || b.thickness || b.d || 80}" min="10" max="300" step="1">
+
+            <!-- Cylindrical Bar Inputs (Default for Turning) -->
+            <div id="group-cylinder-fields" style="display: ${!isBox ? 'block' : 'none'};">
+              <div class="modal-field">
+                <label>Outer Diameter (OD ⌀):</label>
+                <input type="number" id="inp-blank-od" value="${b.od || b.w || b.d || 80}" min="5" max="400" step="1">
+              </div>
             </div>
+
+            <!-- Rectangular / Square Block Inputs -->
+            <div id="group-box-fields" style="display: ${isBox ? 'block' : 'none'};">
+              <div class="modal-field">
+                <label>Width (W):</label>
+                <input type="number" id="inp-blank-w" value="${b.w || b.d || 80}" min="10" max="300" step="1">
+              </div>
+              <div class="modal-field">
+                <label>Thickness / Height (T / H):</label>
+                <input type="number" id="inp-blank-h" value="${b.h || b.thickness || b.d || 80}" min="10" max="300" step="1">
+              </div>
+            </div>
+
             <div class="modal-field">
               <label>Length (L):</label>
               <input type="number" id="inp-blank-l" value="${b.l || 100}" min="10" max="500" step="1">
@@ -1498,17 +1537,22 @@ function dispatchAction(act) {
 
       openModal('Blank Dimensions, Thickness & Center Position (DexCNC Setup)', bodyHTML, () => {
         if (isTurn) {
-          const w = parseFloat(document.querySelector('#inp-blank-w').value) || 80;
-          const h = parseFloat(document.querySelector('#inp-blank-h').value) || 80;
-          const l = parseFloat(document.querySelector('#inp-blank-l').value) || 100;
-          const bore = parseFloat(document.querySelector('#inp-blank-bore').value) || 0;
-          const cx = parseFloat(document.querySelector('#inp-blank-cx').value) || 0;
-          const cy = parseFloat(document.querySelector('#inp-blank-cy').value) || 0;
-          const cz = parseFloat(document.querySelector('#inp-blank-cz').value) || 0;
+          const shape = document.querySelector('#inp-blank-shape')?.value || 'cylinder';
+          const isBoxChoice = shape === 'box';
+          const od = parseFloat(document.querySelector('#inp-blank-od')?.value) || 80;
+          const w = isBoxChoice ? (parseFloat(document.querySelector('#inp-blank-w')?.value) || 80) : od;
+          const h = isBoxChoice ? (parseFloat(document.querySelector('#inp-blank-h')?.value) || 80) : od;
+          const l = parseFloat(document.querySelector('#inp-blank-l')?.value) || 100;
+          const bore = parseFloat(document.querySelector('#inp-blank-bore')?.value) || 0;
+          const cx = parseFloat(document.querySelector('#inp-blank-cx')?.value) || 0;
+          const cy = parseFloat(document.querySelector('#inp-blank-cy')?.value) || 0;
+          const cz = parseFloat(document.querySelector('#inp-blank-cz')?.value) || 0;
+          state.blank.stockType = shape;
+          state.blank.od = od;
           state.blank.w = w;
           state.blank.h = h;
           state.blank.thickness = h;
-          state.blank.d = Math.max(w, h);
+          state.blank.d = isBoxChoice ? Math.max(w, h) : od;
           state.blank.l = l;
           state.blank.bore = bore;
           state.blank.centerX = cx;
@@ -1539,14 +1583,17 @@ function dispatchAction(act) {
         const svgContainer = document.querySelector('#schematic-svg-container');
         if (!svgContainer) return;
         if (isTurn) {
-          const w = parseFloat(document.querySelector('#inp-blank-w').value) || 80;
-          const h = parseFloat(document.querySelector('#inp-blank-h').value) || 80;
-          const l = parseFloat(document.querySelector('#inp-blank-l').value) || 100;
-          const bore = parseFloat(document.querySelector('#inp-blank-bore').value) || 0;
-          const cx = parseFloat(document.querySelector('#inp-blank-cx').value) || 0;
-          const cy = parseFloat(document.querySelector('#inp-blank-cy').value) || 0;
-          const cz = parseFloat(document.querySelector('#inp-blank-cz').value) || 0;
-          svgContainer.innerHTML = renderBlankSchematicSVG('turn', { w, h, l, bore, cx, cy, cz });
+          const shape = document.querySelector('#inp-blank-shape')?.value || 'cylinder';
+          const isBoxChoice = shape === 'box';
+          const od = parseFloat(document.querySelector('#inp-blank-od')?.value) || 80;
+          const w = isBoxChoice ? (parseFloat(document.querySelector('#inp-blank-w')?.value) || 80) : od;
+          const h = isBoxChoice ? (parseFloat(document.querySelector('#inp-blank-h')?.value) || 80) : od;
+          const l = parseFloat(document.querySelector('#inp-blank-l')?.value) || 100;
+          const bore = parseFloat(document.querySelector('#inp-blank-bore')?.value) || 0;
+          const cx = parseFloat(document.querySelector('#inp-blank-cx')?.value) || 0;
+          const cy = parseFloat(document.querySelector('#inp-blank-cy')?.value) || 0;
+          const cz = parseFloat(document.querySelector('#inp-blank-cz')?.value) || 0;
+          svgContainer.innerHTML = renderBlankSchematicSVG('turn', { stockType: shape, od, w, h, l, bore, cx, cy, cz });
         } else {
           const x = parseFloat(document.querySelector('#inp-blank-x').value) || 100;
           const y = parseFloat(document.querySelector('#inp-blank-y').value) || 80;
@@ -1558,10 +1605,24 @@ function dispatchAction(act) {
         }
       };
 
-      // Attach input event listeners
-      modalBody.querySelectorAll('input').forEach(inp => {
+      // Attach input and change event listeners
+      modalBody.querySelectorAll('input, select').forEach(inp => {
         inp.addEventListener('input', updateSchematic);
+        inp.addEventListener('change', updateSchematic);
       });
+
+      // Stock shape toggle listener
+      const shapeSelect = document.querySelector('#inp-blank-shape');
+      if (shapeSelect) {
+        shapeSelect.addEventListener('change', () => {
+          const isB = shapeSelect.value === 'box';
+          const gCyl = document.querySelector('#group-cylinder-fields');
+          const gBox = document.querySelector('#group-box-fields');
+          if (gCyl) gCyl.style.display = isB ? 'none' : 'block';
+          if (gBox) gBox.style.display = isB ? 'block' : 'none';
+          updateSchematic();
+        });
+      }
 
       // Attach preset buttons
       if (isTurn) {
@@ -1570,13 +1631,19 @@ function dispatchAction(act) {
           updateSchematic();
         });
         document.querySelector('#btn-pre-cx-top')?.addEventListener('click', () => {
-          const h = parseFloat(document.querySelector('#inp-blank-h').value) || 80;
-          document.querySelector('#inp-blank-cx').value = (h / 2).toFixed(1);
+          const shape = document.querySelector('#inp-blank-shape')?.value || 'cylinder';
+          const val = shape === 'box'
+            ? (parseFloat(document.querySelector('#inp-blank-h')?.value) || 80)
+            : (parseFloat(document.querySelector('#inp-blank-od')?.value) || 80);
+          document.querySelector('#inp-blank-cx').value = (val / 2).toFixed(1);
           updateSchematic();
         });
         document.querySelector('#btn-pre-cx-bot')?.addEventListener('click', () => {
-          const h = parseFloat(document.querySelector('#inp-blank-h').value) || 80;
-          document.querySelector('#inp-blank-cx').value = (-h / 2).toFixed(1);
+          const shape = document.querySelector('#inp-blank-shape')?.value || 'cylinder';
+          const val = shape === 'box'
+            ? (parseFloat(document.querySelector('#inp-blank-h')?.value) || 80)
+            : (parseFloat(document.querySelector('#inp-blank-od')?.value) || 80);
+          document.querySelector('#inp-blank-cx').value = (-val / 2).toFixed(1);
           updateSchematic();
         });
         document.querySelector('#btn-pre-cy-0')?.addEventListener('click', () => {

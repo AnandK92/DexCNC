@@ -584,14 +584,16 @@ export class CNCSimulator3D {
   updateTurnMesh() {
     if (!this.turnStock || !this.stockMesh) return;
     const { res, n, radii } = this.turnStock;
-    const halfW = (this.blank.w || this.blank.d || 100) / 2;
-    const halfH = (this.blank.h || this.blank.thickness || this.blank.d || 100) / 2;
+    const isBox = this.blank.stockType === 'box';
+    const halfW = (this.blank.w || this.blank.d || 80) / 2;
+    const halfH = (this.blank.h || this.blank.thickness || this.blank.d || 80) / 2;
+    const rawR = (this.blank.od || this.blank.w || this.blank.d || 80) / 2;
 
     const offsetX = this.blank.centerX || 0;
     const offsetY = this.blank.centerY || 0;
     const offsetZ = this.blank.centerZ || 0;
 
-    // 18 linear points per flat edge = 72 perimeter points perfectly aligned with flat faces & 90° corners
+    // 18 linear points per flat edge = 72 perimeter points
     const ptsPerEdge = 18;
     const nTheta = ptsPerEdge * 4;
     const P = [];
@@ -628,8 +630,6 @@ export class CNCSimulator3D {
       return [r, g, b];
     };
 
-    // Precalculate linear perimeter points along the 4 flat edges of the rectangle
-    // Coordinates in Three.js space: Y axis is along halfW, X axis is along halfH
     const boxY = new Float32Array(nTheta);
     const boxX = new Float32Array(nTheta);
     const rBoxTable = new Float32Array(nTheta);
@@ -637,39 +637,51 @@ export class CNCSimulator3D {
     const sinTable = new Float32Array(nTheta);
     const faceNormTable = [];
 
-    for (let e = 0; e < 4; e++) {
-      for (let k = 0; k < ptsPerEdge; k++) {
-        const j = e * ptsPerEdge + k;
-        const t = k / ptsPerEdge;
-        let y, x, norm;
-        if (e === 0) {
-          // Edge 0: Top face (+Y = +halfW), X goes from -halfH to +halfH
-          y = halfW;
-          x = -halfH + 2 * halfH * t;
-          norm = [0, 1, 0];
-        } else if (e === 1) {
-          // Edge 1: Right face (+X = +halfH), Y goes from +halfW to -halfW
-          x = halfH;
-          y = halfW - 2 * halfW * t;
-          norm = [0, 0, 1];
-        } else if (e === 2) {
-          // Edge 2: Bottom face (-Y = -halfW), X goes from +halfH to -halfH
-          y = -halfW;
-          x = halfH - 2 * halfH * t;
-          norm = [0, -1, 0];
-        } else {
-          // Edge 3: Left face (-X = -halfH), Y goes from -halfW to +halfW
-          x = -halfH;
-          y = -halfW + 2 * halfW * t;
-          norm = [0, 0, -1];
+    if (isBox) {
+      // Rectangular / square bar stock: linear perimeter sampling
+      for (let e = 0; e < 4; e++) {
+        for (let k = 0; k < ptsPerEdge; k++) {
+          const j = e * ptsPerEdge + k;
+          const t = k / ptsPerEdge;
+          let y, x, norm;
+          if (e === 0) {
+            y = halfW;
+            x = -halfH + 2 * halfH * t;
+            norm = [0, 1, 0];
+          } else if (e === 1) {
+            x = halfH;
+            y = halfW - 2 * halfW * t;
+            norm = [0, 0, 1];
+          } else if (e === 2) {
+            y = -halfW;
+            x = halfH - 2 * halfH * t;
+            norm = [0, -1, 0];
+          } else {
+            x = -halfH;
+            y = -halfW + 2 * halfW * t;
+            norm = [0, 0, -1];
+          }
+          boxY[j] = y;
+          boxX[j] = x;
+          const r = Math.sqrt(y * y + x * x);
+          rBoxTable[j] = r;
+          cosTable[j] = r > 1e-6 ? y / r : 1;
+          sinTable[j] = r > 1e-6 ? x / r : 0;
+          faceNormTable.push(norm);
         }
-        boxY[j] = y;
-        boxX[j] = x;
-        const r = Math.sqrt(y * y + x * x);
-        rBoxTable[j] = r;
-        cosTable[j] = r > 1e-6 ? y / r : 1;
-        sinTable[j] = r > 1e-6 ? x / r : 0;
-        faceNormTable.push(norm);
+      }
+    } else {
+      // Pure Cylindrical / Round Bar (DEFAULT for CNC Turning)
+      for (let j = 0; j < nTheta; j++) {
+        const theta = (j * 2 * Math.PI) / nTheta;
+        const cos = Math.cos(theta);
+        const sin = Math.sin(theta);
+        cosTable[j] = cos;
+        sinTable[j] = sin;
+        rBoxTable[j] = rawR;
+        boxY[j] = rawR * cos;
+        boxX[j] = rawR * sin;
+        faceNormTable.push([0, cos, sin]); // Radial cylinder normal
       }
     }
 
@@ -800,20 +812,22 @@ export class CNCSimulator3D {
       }
     }
 
-    // Four longitudinal CAD corner edges of the rectangular stock
-    const cornerIndices = [0, ptsPerEdge, ptsPerEdge * 2, ptsPerEdge * 3];
+    // Four longitudinal CAD corner edges of the rectangular stock (only if rectangular stock)
+    if (isBox) {
+      const cornerIndices = [0, ptsPerEdge, ptsPerEdge * 2, ptsPerEdge * 3];
 
-    for (const cj of cornerIndices) {
-      for (let i = 0; i < n - 1; i++) {
-        const isCut0 = radii[i] < rBoxTable[cj] - 0.05;
-        const isCut1 = radii[i + 1] < rBoxTable[cj] - 0.05;
-        if (!isCut0 && !isCut1) {
-          const z0 = -i * res + offsetZ;
-          const z1 = -(i + 1) * res + offsetZ;
-          addEdgeLine(
-            [z0, boxY[cj] + offsetY, boxX[cj] + offsetX],
-            [z1, boxY[cj] + offsetY, boxX[cj] + offsetX]
-          );
+      for (const cj of cornerIndices) {
+        for (let i = 0; i < n - 1; i++) {
+          const isCut0 = radii[i] < rBoxTable[cj] - 0.05;
+          const isCut1 = radii[i + 1] < rBoxTable[cj] - 0.05;
+          if (!isCut0 && !isCut1) {
+            const z0 = -i * res + offsetZ;
+            const z1 = -(i + 1) * res + offsetZ;
+            addEdgeLine(
+              [z0, boxY[cj] + offsetY, boxX[cj] + offsetX],
+              [z1, boxY[cj] + offsetY, boxX[cj] + offsetX]
+            );
+          }
         }
       }
     }
