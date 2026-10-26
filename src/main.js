@@ -297,44 +297,60 @@ M30
 
 
 
+class ModeSession {
+  constructor(mode) {
+    this.mode = mode;
+    this.fileName = 'Untitled.nc';
+    this.fileHandle = null;
+    this.code = ''; // Starts completely blank
+    this.isModified = false;
+
+    if (mode === 'turn') {
+      // Standard 100mm x 100mm Blank for Turning (100mm x 100mm x 100mm Length)
+      this.blank = {
+        w: 100,
+        h: 100,
+        d: 100,
+        l: 100,
+        thickness: 100,
+        bore: 0,
+        centerX: 0,
+        centerY: 0,
+        centerZ: 0
+      };
+    } else {
+      // Standard 100mm x 100mm Blank for Milling (100mm x 100mm x 25mm Depth)
+      this.blank = {
+        x: 100,
+        y: 100,
+        z: 25,
+        w: 100,
+        h: 100,
+        d: 25,
+        thickness: 25,
+        bore: 0,
+        centerX: 0,
+        centerY: 0,
+        centerZ: 0
+      };
+    }
+
+    this.tools = createDefaultTurret();
+  }
+}
+
 class AppState {
   constructor() {
     this.mode = 'turn'; // 'turn' or 'mill'
     this.machineName = 'Fanuc 0iT - Type A';
-    this.currentFileHandle = null;
-    this.currentFileName = 'Untitled.nc';
-    this.isModified = false;
     this.autoSaveEnabled = localStorage.getItem('cnc_autosave') !== 'false';
 
-    // Standard 100mm x 100mm Blank for Turning (100mm x 100mm x 100mm Length)
-    this.turnBlank = {
-      w: 100,
-      h: 100,
-      d: 100,
-      l: 100,
-      thickness: 100,
-      bore: 0,
-      centerX: 0,
-      centerY: 0,
-      centerZ: 0
+    // Completely isolated, independent workspaces for Turning and Milling
+    this.sessions = {
+      turn: new ModeSession('turn'),
+      mill: new ModeSession('mill')
     };
 
-    // Standard 100mm x 100mm Blank for Milling (100mm x 100mm x 25mm Depth)
-    this.millBlank = {
-      x: 100,
-      y: 100,
-      z: 25,
-      w: 100,
-      h: 100,
-      d: 25,
-      thickness: 25,
-      bore: 0,
-      centerX: 0,
-      centerY: 0,
-      centerZ: 0
-    };
-
-    this.tools = createDefaultTurret();
     this.toolsList = [...DEFAULT_42_TOOLS];
     this.activeTab = 'sim'; // 'sim' or 'err'
     this.currentErrors = [];
@@ -342,8 +358,40 @@ class AppState {
     this.totalTime = 0;
   }
 
+  get session() {
+    return this.sessions[this.mode];
+  }
+
   get blank() {
-    return this.mode === 'turn' ? this.turnBlank : this.millBlank;
+    return this.session.blank;
+  }
+
+  get tools() {
+    return this.session.tools;
+  }
+  set tools(t) {
+    this.session.tools = t;
+  }
+
+  get currentFileName() {
+    return this.session.fileName;
+  }
+  set currentFileName(fn) {
+    this.session.fileName = fn;
+  }
+
+  get currentFileHandle() {
+    return this.session.fileHandle;
+  }
+  set currentFileHandle(fh) {
+    this.session.fileHandle = fh;
+  }
+
+  get isModified() {
+    return this.session.isModified;
+  }
+  set isModified(m) {
+    this.session.isModified = m;
   }
 }
 
@@ -685,10 +733,21 @@ async function openFile() {
 
 function switchMode(newMode) {
   if (newMode === state.mode) return;
+
+  // 1. Stash current mode's editor text and state into its dedicated session
+  if (editorEl) {
+    state.session.code = editorEl.value;
+  }
+
+  // 2. Switch mode
   state.mode = newMode;
   state.machineName = newMode === 'turn' ? 'Fanuc 0iT - Type A' : 'Fanuc 0iM - 3 Axis';
-
   const isTurn = newMode === 'turn';
+
+  // 3. Restore the target mode's own isolated code (starts 100% blank if none entered yet)
+  if (editorEl) {
+    editorEl.value = state.session.code || '';
+  }
 
   updateTitleBar();
 
@@ -724,18 +783,13 @@ function switchMode(newMode) {
     checkMill.style.visibility = isTurn ? 'hidden' : 'visible';
   }
 
-  // Update parser and 3D simulation
+  // 4. Update parser and 3D simulation with target mode's independent blank & tools
   parser.setMode(state.mode, state.blank, state.tools);
   if (sim3d) {
     sim3d.setMode(state.mode, state.blank);
-    // In milling mode default to Top (XY), in turning default to 2D Front (XZ)
     sim3d.setView(isTurn ? 'front' : 'top');
   }
 
-  // If editor is empty, keep it blank
-  if (!state.isModified && (!editorEl.value || editorEl.value.trim().length === 0)) {
-    editorEl.value = '';
-  }
   recompileAndReset();
   updateHud(`Switched to ${isTurn ? 'CNC Turning (Lathe)' : 'CNC Milling (VMC)'} Mode`);
 }
@@ -1256,11 +1310,11 @@ function renderBlankSchematicSVG(mode, params) {
 function dispatchAction(act) {
   switch (act) {
     case 'mode-turn':
-      confirmUnsavedChanges(() => switchMode('turn'));
+      switchMode('turn');
       break;
 
     case 'mode-mill':
-      confirmUnsavedChanges(() => switchMode('mill'));
+      switchMode('mill');
       break;
 
     case 'file-new':
@@ -2148,12 +2202,7 @@ speedSlider.oninput = (e) => {
 const modeQuickSelect = document.querySelector('#mode-quick-select');
 if (modeQuickSelect) {
   modeQuickSelect.onchange = (e) => {
-    const targetMode = e.target.value;
-    modeQuickSelect.value = state.mode;
-    confirmUnsavedChanges(() => {
-      switchMode(targetMode);
-      modeQuickSelect.value = targetMode;
-    });
+    switchMode(e.target.value);
   };
 }
 
