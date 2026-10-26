@@ -295,45 +295,7 @@ M30
   ]
 };
 
-// Default Clean Template for New File
-const DEFAULT_CLEAN_TEMPLATES = {
-  turn: `%
-O0001 (UNTITLED TURNING PROGRAM)
-(FANUC 0i-T LATHE)
-G21 G18 G99
-G28 U0.0 W0.0
-T0101
-G50 S3000
-G96 S200 M03
-G00 X50.0 Z2.0 M08
 
-(ENTER MACHINING CODE HERE)
-
-G00 X60.0 Z50.0
-G28 U0.0 W0.0
-M05
-M09
-M30
-%
-`,
-  mill: `%
-O0001 (UNTITLED MILLING PROGRAM)
-(FANUC 0i-M 3-AXIS VMC)
-G21 G90 G17 G54
-G28 Z0.0
-T01 M06
-S3000 M03
-G00 X0.0 Y0.0 Z10.0
-
-(ENTER MACHINING CODE HERE)
-
-G00 Z30.0
-M05
-G28 X0.0 Y0.0
-M30
-%
-`
-};
 
 class AppState {
   constructor() {
@@ -751,9 +713,9 @@ function switchMode(newMode) {
     sim3d.setView(isTurn ? 'front' : 'top');
   }
 
-  // If editor is empty or generic untitled template, update with clean template for new mode
-  if (!state.isModified && (!editorEl.value || editorEl.value.trim().length === 0 || editorEl.value.includes('UNTITLED'))) {
-    editorEl.value = DEFAULT_CLEAN_TEMPLATES[newMode];
+  // If editor is empty, keep it blank
+  if (!state.isModified && (!editorEl.value || editorEl.value.trim().length === 0)) {
+    editorEl.value = '';
   }
   recompileAndReset();
   updateHud(`Switched to ${isTurn ? 'CNC Turning (Lathe)' : 'CNC Milling (VMC)'} Mode`);
@@ -953,7 +915,7 @@ modalCancel.onclick = closeModal;
 
 // Unsaved Work Confirmation Guard
 function confirmUnsavedChanges(onProceed) {
-  if (!state.isModified || !editorEl.value || editorEl.value.trim().length === 0 || editorEl.value.includes('UNTITLED')) {
+  if (!state.isModified || !editorEl.value || editorEl.value.trim().length === 0) {
     onProceed();
     return;
   }
@@ -1287,7 +1249,7 @@ function dispatchAction(act) {
         state.currentFileHandle = null;
         state.currentFileName = 'Untitled.nc';
         state.isModified = false;
-        editorEl.value = DEFAULT_CLEAN_TEMPLATES[state.mode];
+        editorEl.value = '';
         recompileAndReset();
         updateTitleBar();
         sim3d.setView(state.mode === 'turn' ? 'front' : 'top');
@@ -2257,11 +2219,11 @@ viewportContainer.addEventListener('dblclick', () => {
 // Initial UI & Auto-Save Setup
 updateAutoSaveUI();
 
-// Initial Clean App Startup: Start with clean template in 2D Front View (no auto-loaded sample)
+// Initial Clean App Startup: Start with a 100% blank editor (no code) in 2D Front View
 state.currentFileHandle = null;
 state.currentFileName = 'Untitled.nc';
 state.isModified = false;
-editorEl.value = DEFAULT_CLEAN_TEMPLATES['turn'];
+editorEl.value = '';
 recompileAndReset();
 updateTitleBar();
 sim3d.setView('front');
