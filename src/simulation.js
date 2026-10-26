@@ -372,8 +372,8 @@ export class CNCSimulator3D {
 
     // Mill material: Precision-machined industrial steel/aluminum with vertex colors for cut contrast
     const millStockMat = new THREE.MeshStandardMaterial({
-      roughness: 0.45,
-      metalness: 0.28,
+      roughness: 0.35,
+      metalness: 0.38,
       vertexColors: true,
       side: THREE.DoubleSide
     });
@@ -436,8 +436,8 @@ export class CNCSimulator3D {
       this.setView('front');
       this.updateTurnMesh();
     } else {
-      // Mill Mode: High-density 0.5mm resolution for smooth curves & crisp features
-      const res = Math.max(0.4, Math.max(this.blank.x, this.blank.y) / 200);
+      // Mill Mode: High-density resolution for smooth SolidWorks curves & crisp features
+      const res = Math.max(0.32, Math.max(this.blank.x, this.blank.y) / 280);
       const nx = Math.ceil(this.blank.x / res) + 1;
       const ny = Math.ceil(this.blank.y / res) + 1;
       const initialHeights = new Float32Array(nx * ny).fill(0); // Top surface is Z=0
@@ -682,18 +682,14 @@ export class CNCSimulator3D {
     const getY = (j) => Math.min(j * res, B.y);
     const floorZ = -B.z;
 
-    const addVert = (pt, cr, cg, cb) => {
+    const addVert = (pt, c) => {
       P.push(pt[0], pt[2], -pt[1]);
-      C.push(cr, cg, cb);
+      C.push(c[0], c[1], c[2]);
     };
-    const addTri = (a, b, c, cr, cg, cb) => {
-      addVert(a, cr, cg, cb);
-      addVert(b, cr, cg, cb);
-      addVert(c, cr, cg, cb);
-    };
-    const addQuad = (a, b, c, d, cr, cg, cb) => {
-      addTri(a, b, c, cr, cg, cb);
-      addTri(a, c, d, cr, cg, cb);
+    const addTri = (a, b, c, ca, cb, cc) => {
+      addVert(a, ca);
+      addVert(b, cb);
+      addVert(c, cc);
     };
     const addEdgeLine = (p1, p2) => {
       L.push(p1[0], p1[2], -p1[1]);
@@ -701,96 +697,155 @@ export class CNCSimulator3D {
     };
 
     // Color definitions (RGB in 0..1):
-    // Uncut top stock surface (slate blue-gray)
-    const cUncut = [0.42, 0.54, 0.62];
-    // Machined pocket floor (freshly cut bright metallic toolpath sheen with cavity depth shading)
+    // Uncut raw stock top surface: Sleek satin titanium/aluminum silver
+    const cUncut = [0.80, 0.83, 0.88];
+
+    // Machined surface: Vibrant electric CNC Royal Blue (user specified: mill area in blue colour)
     const getMachinedFloorColor = (h) => {
       const depthRatio = Math.min(1, Math.abs(h) / Math.max(B.z, 1));
-      const factor = 1.0 - depthRatio * 0.20;
-      return [0.58 * factor, 0.70 * factor, 0.79 * factor];
+      const r = 0.07 * (1.0 - depthRatio * 0.35);
+      const g = 0.50 * (1.0 - depthRatio * 0.25);
+      const b = 0.92 * (1.0 - depthRatio * 0.15);
+      return [r, g, b];
     };
-    // Vertical machined cut wall
-    const cWall = [0.30, 0.42, 0.50];
-    // Exterior side/bottom stock faces
-    const cExt = [0.36, 0.47, 0.54];
 
-    // 1. Horizontal surfaces: Each grid cell is drawn flat at its own height (with split normals)
-    // Vertical 90-degree step walls are explicitly created at every height change
+    // Exterior side/bottom stock faces: Machine frame steel
+    const cExt = [0.55, 0.60, 0.66];
+
+    // 1. Surface Triangulation: smooth continuous 2-manifold surface with Delaunay ridge selection
     for (let j = 0; j < ny - 1; j++) {
       const y0 = getY(j);
       const y1 = getY(j + 1);
       for (let i = 0; i < nx - 1; i++) {
         const x0 = getX(i);
         const x1 = getX(i + 1);
-        const idx = j * nx + i;
-        const h = heights[idx];
 
-        // Is this cell raw uncut stock or a machined cut?
-        const isCut = h < -0.001;
-        const [cr, cg, cb] = isCut ? getMachinedFloorColor(h) : cUncut;
+        const h00 = heights[j * nx + i];
+        const h10 = heights[j * nx + (i + 1)];
+        const h11 = heights[(j + 1) * nx + (i + 1)];
+        const h01 = heights[(j + 1) * nx + i];
 
-        // Horizontal flat face for this cell
-        addQuad([x0, y0, h], [x1, y0, h], [x1, y1, h], [x0, y1, h], cr, cg, cb);
+        const p00 = [x0, y0, h00];
+        const p10 = [x1, y0, h10];
+        const p11 = [x1, y1, h11];
+        const p01 = [x0, y1, h01];
 
-        // Vertical step wall in +X direction (between this cell and right neighbor)
-        if (i < nx - 2) {
-          const hRight = heights[idx + 1];
-          const diff = h - hRight;
-          if (diff > 0.001) {
-            // Step down to the right (faces +X)
-            addQuad([x1, y0, h], [x1, y1, h], [x1, y1, hRight], [x1, y0, hRight], cWall[0], cWall[1], cWall[2]);
-            addEdgeLine([x1, y0, h], [x1, y1, h]);
-          } else if (diff < -0.001) {
-            // Step up to the right (faces -X)
-            addQuad([x1, y1, hRight], [x1, y0, hRight], [x1, y0, h], [x1, y1, h], cWall[0], cWall[1], cWall[2]);
-            addEdgeLine([x1, y0, hRight], [x1, y1, hRight]);
-          }
-        }
+        const c00 = h00 < -0.015 ? getMachinedFloorColor(h00) : cUncut;
+        const c10 = h10 < -0.015 ? getMachinedFloorColor(h10) : cUncut;
+        const c11 = h11 < -0.015 ? getMachinedFloorColor(h11) : cUncut;
+        const c01 = h01 < -0.015 ? getMachinedFloorColor(h01) : cUncut;
 
-        // Vertical step wall in +Y direction (between this cell and top neighbor)
-        if (j < ny - 2) {
-          const hTop = heights[(j + 1) * nx + i];
-          const diff = h - hTop;
-          if (diff > 0.001) {
-            // Step down into +Y (faces +Y)
-            addQuad([x1, y1, h], [x0, y1, h], [x0, y1, hTop], [x1, y1, hTop], cWall[0], cWall[1], cWall[2]);
-            addEdgeLine([x0, y1, h], [x1, y1, h]);
-          } else if (diff < -0.001) {
-            // Step up into +Y (faces -Y)
-            addQuad([x0, y1, hTop], [x1, y1, hTop], [x1, y1, h], [x0, y1, h], cWall[0], cWall[1], cWall[2]);
-            addEdgeLine([x0, y1, hTop], [x1, y1, hTop]);
-          }
+        // Adaptive diagonal: connect vertices with closest heights to preserve sharp circular & contour ridges
+        if (Math.abs(h00 - h11) <= Math.abs(h10 - h01)) {
+          addTri(p00, p10, p11, c00, c10, c11);
+          addTri(p00, p11, p01, c00, c11, c01);
+        } else {
+          addTri(p10, p11, p01, c10, c11, c01);
+          addTri(p10, p01, p00, c10, c01, c00);
         }
       }
     }
 
-    // 2. Exterior stock side walls (from current surface height down to floorZ)
+    // 2. Exterior stock side walls (from surface height down to floorZ)
     for (let i = 0; i < nx - 1; i++) {
       const x0 = getX(i);
       const x1 = getX(i + 1);
-      const hFront = heights[i];
-      addQuad([x0, 0, floorZ], [x1, 0, floorZ], [x1, 0, hFront], [x0, 0, hFront], cExt[0], cExt[1], cExt[2]);
-      const hBack = heights[(ny - 2) * nx + i];
-      addQuad([x1, B.y, floorZ], [x0, B.y, floorZ], [x0, B.y, hBack], [x1, B.y, hBack], cExt[0], cExt[1], cExt[2]);
+      const hFront0 = heights[i];
+      const hFront1 = heights[i + 1];
+      addTri([x0, 0, floorZ], [x1, 0, floorZ], [x1, 0, hFront1], cExt, cExt, cExt);
+      addTri([x0, 0, floorZ], [x1, 0, hFront1], [x0, 0, hFront0], cExt, cExt, cExt);
+
+      const hBack0 = heights[(ny - 1) * nx + i];
+      const hBack1 = heights[(ny - 1) * nx + (i + 1)];
+      addTri([x1, B.y, floorZ], [x0, B.y, floorZ], [x0, B.y, hBack0], cExt, cExt, cExt);
+      addTri([x1, B.y, floorZ], [x0, B.y, hBack0], [x1, B.y, hBack1], cExt, cExt, cExt);
     }
 
     for (let j = 0; j < ny - 1; j++) {
       const y0 = getY(j);
       const y1 = getY(j + 1);
-      const hLeft = heights[j * nx];
-      addQuad([0, y1, floorZ], [0, y0, floorZ], [0, y0, hLeft], [0, y1, hLeft], cExt[0], cExt[1], cExt[2]);
-      const hRight = heights[j * nx + (nx - 2)];
-      addQuad([B.x, y0, floorZ], [B.x, y1, floorZ], [B.x, y1, hRight], [B.x, y0, hRight], cExt[0], cExt[1], cExt[2]);
+      const hLeft0 = heights[j * nx];
+      const hLeft1 = heights[(j + 1) * nx];
+      addTri([0, y1, floorZ], [0, y0, floorZ], [0, y0, hLeft0], cExt, cExt, cExt);
+      addTri([0, y1, floorZ], [0, y0, hLeft0], [0, y1, hLeft1], cExt, cExt, cExt);
+
+      const hRight0 = heights[j * nx + (nx - 1)];
+      const hRight1 = heights[(j + 1) * nx + (nx - 1)];
+      addTri([B.x, y0, floorZ], [B.x, y1, floorZ], [B.x, y1, hRight1], cExt, cExt, cExt);
+      addTri([B.x, y0, floorZ], [B.x, y1, hRight1], [B.x, y0, hRight0], cExt, cExt, cExt);
     }
 
     // 3. Bottom plate (Z = floorZ)
-    addQuad([0, 0, floorZ], [0, B.y, floorZ], [B.x, B.y, floorZ], [B.x, 0, floorZ], cExt[0] * 0.75, cExt[1] * 0.75, cExt[2] * 0.75);
+    const cBottom = [cExt[0] * 0.75, cExt[1] * 0.75, cExt[2] * 0.75];
+    addTri([0, 0, floorZ], [B.x, 0, floorZ], [B.x, B.y, floorZ], cBottom, cBottom, cBottom);
+    addTri([0, 0, floorZ], [B.x, B.y, floorZ], [0, B.y, floorZ], cBottom, cBottom, cBottom);
 
-    // 4. Outer stock rim edge lines
+    // 4. CAD Edge lines: Outer stock box + Marching Squares smooth contour curves
     addEdgeLine([0, 0, 0], [B.x, 0, 0]);
     addEdgeLine([B.x, 0, 0], [B.x, B.y, 0]);
     addEdgeLine([B.x, B.y, 0], [0, B.y, 0]);
     addEdgeLine([0, B.y, 0], [0, 0, 0]);
+
+    addEdgeLine([0, 0, floorZ], [B.x, 0, floorZ]);
+    addEdgeLine([B.x, 0, floorZ], [B.x, B.y, floorZ]);
+    addEdgeLine([B.x, B.y, floorZ], [0, B.y, floorZ]);
+    addEdgeLine([0, B.y, floorZ], [0, 0, floorZ]);
+
+    addEdgeLine([0, 0, 0], [0, 0, floorZ]);
+    addEdgeLine([B.x, 0, 0], [B.x, 0, floorZ]);
+    addEdgeLine([B.x, B.y, 0], [B.x, B.y, floorZ]);
+    addEdgeLine([0, B.y, 0], [0, B.y, floorZ]);
+
+    // Marching Squares contour lines for cut boundaries (SolidWorks silhouette curves)
+    for (let j = 0; j < ny - 1; j++) {
+      const y0 = getY(j);
+      const y1 = getY(j + 1);
+      for (let i = 0; i < nx - 1; i++) {
+        const x0 = getX(i);
+        const x1 = getX(i + 1);
+        const h00 = heights[j * nx + i];
+        const h10 = heights[j * nx + (i + 1)];
+        const h11 = heights[(j + 1) * nx + (i + 1)];
+        const h01 = heights[(j + 1) * nx + i];
+
+        const minH = Math.min(h00, h10, h11, h01);
+        const maxH = Math.max(h00, h10, h11, h01);
+
+        // Detect if this cell contains a cut boundary wall (cliff)
+        if (maxH - minH > 0.35) {
+          const isoH = (maxH + minH) * 0.5;
+          const crossings = [];
+
+          // Edge 0: bottom (x0, y0) -> (x1, y0)
+          if ((h00 >= isoH) !== (h10 >= isoH)) {
+            const t = (isoH - h00) / (h10 - h00);
+            crossings.push([x0 + t * (x1 - x0), y0, isoH]);
+          }
+          // Edge 1: right (x1, y0) -> (x1, y1)
+          if ((h10 >= isoH) !== (h11 >= isoH)) {
+            const t = (isoH - h10) / (h11 - h10);
+            crossings.push([x1, y0 + t * (y1 - y0), isoH]);
+          }
+          // Edge 2: top (x1, y1) -> (x0, y1)
+          if ((h11 >= isoH) !== (h01 >= isoH)) {
+            const t = (isoH - h11) / (h01 - h11);
+            crossings.push([x1 + t * (x0 - x1), y1, isoH]);
+          }
+          // Edge 3: left (x0, y1) -> (x0, y0)
+          if ((h01 >= isoH) !== (h00 >= isoH)) {
+            const t = (isoH - h01) / (h00 - h01);
+            crossings.push([x0, y1 + t * (y0 - y1), isoH]);
+          }
+
+          if (crossings.length === 2) {
+            addEdgeLine(crossings[0], crossings[1]);
+          } else if (crossings.length === 4) {
+            addEdgeLine(crossings[0], crossings[1]);
+            addEdgeLine(crossings[2], crossings[3]);
+          }
+        }
+      }
+    }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
@@ -802,7 +857,7 @@ export class CNCSimulator3D {
 
     // Update CAD Edge lines mesh
     if (!this.millEdgesMesh) {
-      const lineMat = new THREE.LineBasicMaterial({ color: 0x182c3a, transparent: true, opacity: 0.85 });
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x0a1d33, transparent: true, opacity: 0.90 });
       this.millEdgesMesh = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat);
       this.scene.add(this.millEdgesMesh);
     }
@@ -841,10 +896,11 @@ export class CNCSimulator3D {
       const B = this.blank;
 
       if (step.isCut) {
-        const minI = Math.max(0, Math.floor((x - toolR) / res));
-        const maxI = Math.min(nx - 1, Math.ceil((x + toolR) / res));
-        const minJ = Math.max(0, Math.floor((y - toolR) / res));
-        const maxJ = Math.min(ny - 1, Math.ceil((y + toolR) / res));
+        const rOuter = toolR + res * 0.75;
+        const minI = Math.max(0, Math.floor((x - rOuter) / res));
+        const maxI = Math.min(nx - 1, Math.ceil((x + rOuter) / res));
+        const minJ = Math.max(0, Math.floor((y - rOuter) / res));
+        const maxJ = Math.min(ny - 1, Math.ceil((y + rOuter) / res));
 
         for (let j = minJ; j <= maxJ; j++) {
           for (let i = minI; i <= maxI; i++) {
@@ -856,6 +912,16 @@ export class CNCSimulator3D {
               const idx = j * nx + i;
               if (heights[idx] > z) {
                 heights[idx] = Math.max(z, -B.z);
+                this.isMeshDirty = true;
+              }
+            } else if (distSq < rOuter * rOuter) {
+              // Sub-cell radial boundary smoothing to eliminate staircase steps on circles
+              const dist = Math.sqrt(distSq);
+              const frac = (dist - toolR) / (rOuter - toolR);
+              const rampH = z * (1 - frac);
+              const idx = j * nx + i;
+              if (rampH < heights[idx]) {
+                heights[idx] = Math.max(z, rampH);
                 this.isMeshDirty = true;
               }
             }
