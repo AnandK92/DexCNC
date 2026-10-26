@@ -591,7 +591,9 @@ export class CNCSimulator3D {
     const offsetY = this.blank.centerY || 0;
     const offsetZ = this.blank.centerZ || 0;
 
-    const nTheta = 72; // 72 angular steps (5° steps for crisp cylinder & cuboid faces)
+    // 18 linear points per flat edge = 72 perimeter points perfectly aligned with flat faces & 90° corners
+    const ptsPerEdge = 18;
+    const nTheta = ptsPerEdge * 4;
     const P = [];
     const C = [];
     const N = [];
@@ -614,7 +616,7 @@ export class CNCSimulator3D {
       L.push(p2[0], p2[1], p2[2]);
     };
 
-    // Color definitions (matching milling exactly):
+    // Color definitions:
     // Uncut raw bar stock surface: Sleek satin titanium/aluminum silver
     const cUncut = [0.80, 0.83, 0.88];
 
@@ -626,31 +628,97 @@ export class CNCSimulator3D {
       return [r, g, b];
     };
 
-    // Precalculate Box distance at each angle
+    // Precalculate linear perimeter points along the 4 flat edges of the rectangle
+    // Coordinates in Three.js space: Y axis is along halfW, X axis is along halfH
+    const boxY = new Float32Array(nTheta);
+    const boxX = new Float32Array(nTheta);
     const rBoxTable = new Float32Array(nTheta);
     const cosTable = new Float32Array(nTheta);
     const sinTable = new Float32Array(nTheta);
-    for (let j = 0; j < nTheta; j++) {
-      const theta = (j * 2 * Math.PI) / nTheta;
-      const cos = Math.cos(theta);
-      const sin = Math.sin(theta);
-      rBoxTable[j] = Math.min(
-        halfW / Math.max(Math.abs(cos), 1e-5),
-        halfH / Math.max(Math.abs(sin), 1e-5)
-      );
-      cosTable[j] = cos;
-      sinTable[j] = sin;
+    const faceNormTable = [];
+
+    for (let e = 0; e < 4; e++) {
+      for (let k = 0; k < ptsPerEdge; k++) {
+        const j = e * ptsPerEdge + k;
+        const t = k / ptsPerEdge;
+        let y, x, norm;
+        if (e === 0) {
+          // Edge 0: Top face (+Y = +halfW), X goes from -halfH to +halfH
+          y = halfW;
+          x = -halfH + 2 * halfH * t;
+          norm = [0, 1, 0];
+        } else if (e === 1) {
+          // Edge 1: Right face (+X = +halfH), Y goes from +halfW to -halfW
+          x = halfH;
+          y = halfW - 2 * halfW * t;
+          norm = [0, 0, 1];
+        } else if (e === 2) {
+          // Edge 2: Bottom face (-Y = -halfW), X goes from +halfH to -halfH
+          y = -halfW;
+          x = halfH - 2 * halfH * t;
+          norm = [0, -1, 0];
+        } else {
+          // Edge 3: Left face (-X = -halfH), Y goes from -halfW to +halfW
+          x = -halfH;
+          y = -halfW + 2 * halfW * t;
+          norm = [0, 0, -1];
+        }
+        boxY[j] = y;
+        boxX[j] = x;
+        const r = Math.sqrt(y * y + x * x);
+        rBoxTable[j] = r;
+        cosTable[j] = r > 1e-6 ? y / r : 1;
+        sinTable[j] = r > 1e-6 ? x / r : 0;
+        faceNormTable.push(norm);
+      }
     }
 
     // Helper to calculate exact vertex position at (station i, angle j)
     const getPoint = (i, j) => {
       const z = -i * res + offsetZ;
       const cutR = radii[i];
-      const r = Math.min(rBoxTable[j], cutR);
-      return [z, r * cosTable[j] + offsetY, r * sinTable[j] + offsetX];
+      if (cutR >= rBoxTable[j]) {
+        // Uncut raw stock: exact planar flat face coordinates
+        return [z, boxY[j] + offsetY, boxX[j] + offsetX];
+      }
+      // Cut turned surface: exact cylinder coordinates
+      return [z, cutR * cosTable[j] + offsetY, cutR * sinTable[j] + offsetX];
     };
 
-    // 1. Generate side quad triangles with split planar normals on uncut stock & smooth normals on turned parts
+    // Precompute smooth central-difference radial slopes at each station
+    const nxTable = new Float32Array(n);
+    const radScaleTable = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const prevR = radii[Math.max(0, i - 1)];
+      const nextR = radii[Math.min(n - 1, i + 1)];
+      let dr = 0;
+      if (Math.abs(radii[i] - prevR) < 1.0 && Math.abs(nextR - radii[i]) < 1.0) {
+        dr = (nextR - prevR) / (2 * res);
+      } else if (Math.abs(nextR - radii[i]) < 1.0) {
+        dr = (nextR - radii[i]) / res;
+      } else if (Math.abs(radii[i] - prevR) < 1.0) {
+        dr = (radii[i] - prevR) / res;
+      }
+      nxTable[i] = -dr / Math.sqrt(1 + dr * dr);
+      radScaleTable[i] = 1 / Math.sqrt(1 + dr * dr);
+    }
+
+    // Helper to evaluate continuous color and normal at any vertex (station i, angle j)
+    const getVertexData = (i, j) => {
+      const isCut = radii[i] < rBoxTable[j] - 0.03;
+      let col, norm;
+      if (isCut) {
+        const depthRatio = Math.min(1, Math.max(0, (rBoxTable[j] - radii[i]) / Math.max(rBoxTable[j], 1)));
+        col = getMachinedColor(depthRatio);
+        norm = [nxTable[i], cosTable[j] * radScaleTable[i], sinTable[j] * radScaleTable[i]];
+      } else {
+        col = cUncut;
+        norm = faceNormTable[j];
+      }
+      return { col, norm };
+    };
+
+    // 1. Generate side quad triangles
     for (let i = 0; i < n - 1; i++) {
       for (let j = 0; j < nTheta; j++) {
         const nextJ = (j + 1) % nTheta;
@@ -660,76 +728,40 @@ export class CNCSimulator3D {
         const p11 = getPoint(i + 1, nextJ);
         const p01 = getPoint(i, nextJ);
 
-        const isCut0 = radii[i] < rBoxTable[j] - 0.03;
-        const isCut1 = radii[i + 1] < rBoxTable[j] - 0.03;
-        const isCutNext0 = radii[i] < rBoxTable[nextJ] - 0.03;
-        const isCutNext1 = radii[i + 1] < rBoxTable[nextJ] - 0.03;
-        const isAnyCut = isCut0 || isCut1 || isCutNext0 || isCutNext1;
+        const v00 = getVertexData(i, j);
+        const v10 = getVertexData(i + 1, j);
+        const v11 = getVertexData(i + 1, nextJ);
+        const v01 = getVertexData(i, nextJ);
 
-        if (isAnyCut) {
-          // Turned cylindrical / conical surface: smooth radial cylinder normals
-          const depthRatio = Math.min(1, Math.max(0, (rBoxTable[j] - Math.min(radii[i], radii[i + 1])) / Math.max(rBoxTable[j], 1)));
-          const col = getMachinedColor(depthRatio);
-
-          const dr0 = (radii[i + 1] - radii[i]) / res;
-          const nx0 = -dr0 / Math.sqrt(1 + dr0 * dr0);
-          const radScale0 = 1 / Math.sqrt(1 + dr0 * dr0);
-
-          const n00 = [nx0, cosTable[j] * radScale0, sinTable[j] * radScale0];
-          const n10 = [nx0, cosTable[j] * radScale0, sinTable[j] * radScale0];
-          const n01 = [nx0, cosTable[nextJ] * radScale0, sinTable[nextJ] * radScale0];
-          const n11 = [nx0, cosTable[nextJ] * radScale0, sinTable[nextJ] * radScale0];
-
-          addTri(p00, p10, p11, col, col, col, n00, n10, n11);
-          addTri(p00, p11, p01, col, col, col, n00, n11, n01);
-        } else {
-          // Uncut raw rectangular stock: Planar normal based on the active face (preserves razor-sharp 90° corners)
-          const midTheta = ((j + 0.5) * 2 * Math.PI) / nTheta;
-          const midCos = Math.cos(midTheta);
-          const midSin = Math.sin(midTheta);
-
-          let faceNorm;
-          if (Math.abs(midCos) >= Math.abs(midSin)) {
-            faceNorm = midCos > 0 ? [0, 1, 0] : [0, -1, 0]; // Top or Bottom flat face
-          } else {
-            faceNorm = midSin > 0 ? [0, 0, 1] : [0, 0, -1]; // Front or Back flat side
-          }
-
-          addTri(p00, p10, p11, cUncut, cUncut, cUncut, faceNorm, faceNorm, faceNorm);
-          addTri(p00, p11, p01, cUncut, cUncut, cUncut, faceNorm, faceNorm, faceNorm);
-        }
+        addTri(p00, p10, p11, v00.col, v10.col, v11.col, v00.norm, v10.norm, v11.norm);
+        addTri(p00, p11, p01, v00.col, v11.col, v01.col, v00.norm, v11.norm, v01.norm);
       }
     }
 
     // 2. Front cap at z=offsetZ (station 0) - Flat planar facing normal [1, 0, 0]
     const cutR0 = radii[0];
-    const isFrontCut = cutR0 < halfW - 0.03;
+    const isFrontCut = cutR0 < Math.min(halfW, halfH) - 0.03;
     const cFront = isFrontCut ? getMachinedColor(0.2) : cUncut;
     const nFront = [1, 0, 0];
     const pCenterFront = [offsetZ, offsetY, offsetX];
 
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
-      const r0 = Math.min(rBoxTable[j], cutR0);
-      const r1 = Math.min(rBoxTable[nextJ], cutR0);
-      const p0 = [offsetZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX];
-      const p1 = [offsetZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX];
+      const p0 = getPoint(0, j);
+      const p1 = getPoint(0, nextJ);
       addTri(pCenterFront, p1, p0, cFront, cFront, cFront, nFront, nFront, nFront);
     }
 
     // 3. Back cap at z=backZ (station n-1) - Flat planar normal [-1, 0, 0]
     const backZ = -(n - 1) * res + offsetZ;
-    const cutRLast = radii[n - 1];
     const cBack = [0.55, 0.60, 0.66];
     const nBack = [-1, 0, 0];
     const pCenterBack = [backZ, offsetY, offsetX];
 
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
-      const r0 = Math.min(rBoxTable[j], cutRLast);
-      const r1 = Math.min(rBoxTable[nextJ], cutRLast);
-      const p0 = [backZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX];
-      const p1 = [backZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX];
+      const p0 = getPoint(n - 1, j);
+      const p1 = getPoint(n - 1, nextJ);
       addTri(pCenterBack, p0, p1, cBack, cBack, cBack, nBack, nBack, nBack);
     }
 
@@ -737,28 +769,20 @@ export class CNCSimulator3D {
     // Front face rim
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
-      const r0 = Math.min(rBoxTable[j], cutR0);
-      const r1 = Math.min(rBoxTable[nextJ], cutR0);
-      addEdgeLine(
-        [offsetZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX],
-        [offsetZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX]
-      );
+      const p0 = getPoint(0, j);
+      const p1 = getPoint(0, nextJ);
+      addEdgeLine(p0, p1);
     }
 
     // Back face rim
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
-      const r0 = Math.min(rBoxTable[j], cutRLast);
-      const r1 = Math.min(rBoxTable[nextJ], cutRLast);
-      addEdgeLine(
-        [backZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX],
-        [backZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX]
-      );
+      const p0 = getPoint(n - 1, j);
+      const p1 = getPoint(n - 1, nextJ);
+      addEdgeLine(p0, p1);
     }
 
     // Circular ring outlines on turned steps / sharp shoulders:
-    // Only where there is an actual steep shoulder step (diff > 0.75mm)
-    // AND strictly within the machined interior (never drawing lines across the raw box planar faces)
     for (let i = 0; i < n - 1; i++) {
       const diff = Math.abs(radii[i] - radii[i + 1]);
       if (diff > Math.max(res * 1.5, 0.75)) {
@@ -776,13 +800,8 @@ export class CNCSimulator3D {
       }
     }
 
-    // Four longitudinal CAD corner edges of the rectangular stock (at 45°, 135°, 225°, 315°)
-    const cornerIndices = [
-      Math.round(nTheta * 1 / 8), // 45°
-      Math.round(nTheta * 3 / 8), // 135°
-      Math.round(nTheta * 5 / 8), // 225°
-      Math.round(nTheta * 7 / 8)  // 315°
-    ];
+    // Four longitudinal CAD corner edges of the rectangular stock
+    const cornerIndices = [0, ptsPerEdge, ptsPerEdge * 2, ptsPerEdge * 3];
 
     for (const cj of cornerIndices) {
       for (let i = 0; i < n - 1; i++) {
@@ -791,11 +810,9 @@ export class CNCSimulator3D {
         if (!isCut0 && !isCut1) {
           const z0 = -i * res + offsetZ;
           const z1 = -(i + 1) * res + offsetZ;
-          const r0 = rBoxTable[cj];
-          const r1 = rBoxTable[cj];
           addEdgeLine(
-            [z0, r0 * cosTable[cj] + offsetY, r0 * sinTable[cj] + offsetX],
-            [z1, r1 * cosTable[cj] + offsetY, r1 * sinTable[cj] + offsetX]
+            [z0, boxY[cj] + offsetY, boxX[cj] + offsetX],
+            [z1, boxY[cj] + offsetY, boxX[cj] + offsetX]
           );
         }
       }
