@@ -355,18 +355,24 @@ export class CNCSimulator3D {
       });
       this.toolMesh = null;
     }
+    if (this.turnEdgesMesh) {
+      this.scene.remove(this.turnEdgesMesh);
+      if (this.turnEdgesMesh.geometry) this.turnEdgesMesh.geometry.dispose();
+      this.turnEdgesMesh = null;
+    }
+    if (this.millEdgesMesh) {
+      this.scene.remove(this.millEdgesMesh);
+      if (this.millEdgesMesh.geometry) this.millEdgesMesh.geometry.dispose();
+      this.millEdgesMesh = null;
+    }
 
     const { colorTex, bumpTex } = this.createLatheFinishTextures();
 
-    // Lathe material: Vibrant electric cyan with turned concentric feed lines
-    const latheStockMat = new THREE.MeshPhongMaterial({
-      color: 0x00e5ff,
-      emissive: 0x008da6,
-      specular: 0x80f8ff,
-      shininess: 18,
-      map: colorTex,
-      bumpMap: bumpTex,
-      bumpScale: 0.022,
+    // Turning Stock Material: Precision-machined industrial steel/aluminum with vertex colors for cut contrast (identical to mill)
+    const latheStockMat = new THREE.MeshStandardMaterial({
+      roughness: 0.35,
+      metalness: 0.38,
+      vertexColors: true,
       side: THREE.DoubleSide
     });
 
@@ -378,44 +384,28 @@ export class CNCSimulator3D {
       side: THREE.DoubleSide
     });
 
-    // Configure lighting specifically for current mode
-    if (this.mode === 'mill') {
-      if (this.cyanAmb) this.cyanAmb.intensity = 0.0;
-      if (this.cameraLight) this.cameraLight.intensity = 0.0; // Turn off headlamp to prevent angle-dependent glare
-      if (this.amb) this.amb.intensity = 0.70;
+    // Configure lighting: Studio fixed lighting anchored in world space (no angle-dependent wobble or cyan tint)
+    if (this.cyanAmb) this.cyanAmb.intensity = 0.0;
+    if (this.cameraLight) this.cameraLight.intensity = 0.0; // Turn off headlamp to prevent angle-dependent glare
+    if (this.amb) this.amb.intensity = 0.70;
 
-      // Studio Fixed Key Light (Top-Right-Front in world space)
-      if (this.keyLight) {
-        this.keyLight.color.setHex(0xffffff);
-        this.keyLight.intensity = 1.10;
-        this.keyLight.position.set(160, 320, 180);
-      }
-      // Studio Fixed Fill Light (Top-Left-Back in world space)
-      if (this.fillLight) {
-        this.fillLight.color.setHex(0xdbeafe);
-        this.fillLight.intensity = 0.50;
-        this.fillLight.position.set(-160, 220, -140);
-      }
-      // Top overhead light for constant cavity illumination
-      if (this.rimLight) {
-        this.rimLight.color.setHex(0xffffff);
-        this.rimLight.intensity = 0.40;
-        this.rimLight.position.set(0, 380, 0);
-      }
-    } else {
-      if (this.cameraLight) this.cameraLight.intensity = 0.85;
-      if (this.cyanAmb) this.cyanAmb.intensity = 0.55;
-      if (this.amb) this.amb.intensity = 0.85;
-      if (this.fillLight) {
-        this.fillLight.color.setHex(0x38e8ff);
-        this.fillLight.intensity = 0.5;
-        this.fillLight.position.set(100, -150, 120);
-      }
-      if (this.rimLight) {
-        this.rimLight.color.setHex(0x70f5ff);
-        this.rimLight.intensity = 0.5;
-        this.rimLight.position.set(-200, 180, -150);
-      }
+    // Studio Fixed Key Light (Top-Right-Front in world space)
+    if (this.keyLight) {
+      this.keyLight.color.setHex(0xffffff);
+      this.keyLight.intensity = 1.10;
+      this.keyLight.position.set(160, 320, 180);
+    }
+    // Studio Fixed Fill Light (Top-Left-Back in world space)
+    if (this.fillLight) {
+      this.fillLight.color.setHex(0xdbeafe);
+      this.fillLight.intensity = 0.50;
+      this.fillLight.position.set(-160, 220, -140);
+    }
+    // Top overhead light for constant cavity illumination
+    if (this.rimLight) {
+      this.rimLight.color.setHex(0xffffff);
+      this.rimLight.intensity = 0.40;
+      this.rimLight.position.set(0, 380, 0);
     }
 
     if (this.mode === 'turn') {
@@ -576,9 +566,28 @@ export class CNCSimulator3D {
     const offsetY = this.blank.centerY || 0;
     const offsetZ = this.blank.centerZ || 0;
 
-    const nTheta = 72; // 72 angular steps (5° steps for crisp cuboid faces)
+    const nTheta = 72; // 72 angular steps (5° steps for crisp cylinder & cuboid faces)
     const P = [];
+    const C = [];
+    const L = []; // Line segments for CAD boundary edges
     const idx = (station, ang) => station * nTheta + ang;
+
+    const addEdgeLine = (p1, p2) => {
+      L.push(p1[0], p1[1], p1[2]);
+      L.push(p2[0], p2[1], p2[2]);
+    };
+
+    // Color definitions (matching milling exactly):
+    // Uncut raw bar stock surface: Sleek satin titanium/aluminum silver
+    const cUncut = [0.80, 0.83, 0.88];
+
+    // Machined/Turned cut surface: Vibrant electric CNC Royal Blue
+    const getMachinedColor = (depthRatio) => {
+      const r = 0.07 * (1.0 - depthRatio * 0.35);
+      const g = 0.50 * (1.0 - depthRatio * 0.25);
+      const b = 0.92 * (1.0 - depthRatio * 0.15);
+      return [r, g, b];
+    };
 
     // Precalculate Box distance at each angle
     const rBoxTable = new Float32Array(nTheta);
@@ -596,18 +605,25 @@ export class CNCSimulator3D {
       sinTable[j] = sin;
     }
 
-    const UVs = [];
-
-    // 1. Generate ring vertices for all Z stations
+    // 1. Generate ring vertices & vertex colors for all Z stations
     for (let i = 0; i < n; i++) {
       const z = -i * res + offsetZ;
       const cutR = radii[i];
-      const v = i / Math.max(1, n - 1);
       for (let j = 0; j < nTheta; j++) {
-        const r = Math.min(rBoxTable[j], cutR);
+        const rRaw = rBoxTable[j];
+        const isCut = cutR < rRaw - 0.03;
+        const r = Math.min(rRaw, cutR);
+
         // Spindle axis is X = z (machine Z), Y = r*cos, Z = r*sin
         P.push(z, r * cosTable[j] + offsetY, r * sinTable[j] + offsetX);
-        UVs.push(j / nTheta, v);
+
+        if (isCut) {
+          const depthRatio = Math.min(1, Math.max(0, (rRaw - cutR) / Math.max(rRaw, 1)));
+          const [cr, cg, cb] = getMachinedColor(depthRatio);
+          C.push(cr, cg, cb);
+        } else {
+          C.push(cUncut[0], cUncut[1], cUncut[2]);
+        }
       }
     }
 
@@ -630,13 +646,25 @@ export class CNCSimulator3D {
     // 3. Front cap at z=offsetZ (station 0) - Crisp planar facing with sharp normal
     const frontCenterIdx = P.length / 3;
     P.push(offsetZ, offsetY, offsetX);
-    UVs.push(0.5, 0.5);
     const cutR0 = radii[0];
+    const isFrontCut = cutR0 < halfW - 0.03;
+    if (isFrontCut) {
+      const [cr, cg, cb] = getMachinedColor(0.2);
+      C.push(cr, cg, cb);
+    } else {
+      C.push(cUncut[0], cUncut[1], cUncut[2]);
+    }
+
     const frontRingStart = P.length / 3;
     for (let j = 0; j < nTheta; j++) {
       const r = Math.min(rBoxTable[j], cutR0);
       P.push(offsetZ, r * cosTable[j] + offsetY, r * sinTable[j] + offsetX);
-      UVs.push(0.5 + 0.5 * cosTable[j] * (r / halfW), 0.5 + 0.5 * sinTable[j] * (r / halfH));
+      if (isFrontCut) {
+        const [cr, cg, cb] = getMachinedColor(0.2);
+        C.push(cr, cg, cb);
+      } else {
+        C.push(cUncut[0], cUncut[1], cUncut[2]);
+      }
     }
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
@@ -647,27 +675,103 @@ export class CNCSimulator3D {
     const backZ = -(n - 1) * res + offsetZ;
     const backCenterIdx = P.length / 3;
     P.push(backZ, offsetY, offsetX);
-    UVs.push(0.5, 0.5);
+    const cBack = [0.55, 0.60, 0.66];
+    C.push(cBack[0], cBack[1], cBack[2]);
+
     const cutRLast = radii[n - 1];
     const backRingStart = P.length / 3;
     for (let j = 0; j < nTheta; j++) {
       const r = Math.min(rBoxTable[j], cutRLast);
       P.push(backZ, r * cosTable[j] + offsetY, r * sinTable[j] + offsetX);
-      UVs.push(0.5 + 0.5 * cosTable[j] * (r / halfW), 0.5 + 0.5 * sinTable[j] * (r / halfH));
+      C.push(cBack[0], cBack[1], cBack[2]);
     }
     for (let j = 0; j < nTheta; j++) {
       const nextJ = (j + 1) % nTheta;
       indices.push(backCenterIdx, backRingStart + j, backRingStart + nextJ);
     }
 
+    // 5. CAD Edge Lines for Turning (SolidWorks "Shaded with Edges" style)
+    // Front circular face rim
+    for (let j = 0; j < nTheta; j++) {
+      const nextJ = (j + 1) % nTheta;
+      const r0 = Math.min(rBoxTable[j], cutR0);
+      const r1 = Math.min(rBoxTable[nextJ], cutR0);
+      addEdgeLine(
+        [offsetZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX],
+        [offsetZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX]
+      );
+    }
+
+    // Back circular face rim
+    for (let j = 0; j < nTheta; j++) {
+      const nextJ = (j + 1) % nTheta;
+      const r0 = Math.min(rBoxTable[j], cutRLast);
+      const r1 = Math.min(rBoxTable[nextJ], cutRLast);
+      addEdgeLine(
+        [backZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX],
+        [backZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX]
+      );
+    }
+
+    // Circular ring outlines on turned steps / shoulders
+    for (let i = 0; i < n - 1; i++) {
+      const diff = Math.abs(radii[i] - radii[i + 1]);
+      if (diff > 0.25) {
+        const stepZ = -i * res + offsetZ;
+        const stepR = Math.max(radii[i], radii[i + 1]);
+        for (let j = 0; j < nTheta; j++) {
+          const nextJ = (j + 1) % nTheta;
+          const r0 = Math.min(rBoxTable[j], stepR);
+          const r1 = Math.min(rBoxTable[nextJ], stepR);
+          addEdgeLine(
+            [stepZ, r0 * cosTable[j] + offsetY, r0 * sinTable[j] + offsetX],
+            [stepZ, r1 * cosTable[nextJ] + offsetY, r1 * sinTable[nextJ] + offsetX]
+          );
+        }
+      }
+    }
+
+    // Longitudinal profile silhouettes along top (angle 0) and bottom (angle nTheta/2)
+    const jTop = 0;
+    const jBot = Math.floor(nTheta / 2);
+    for (let i = 0; i < n - 1; i++) {
+      const z0 = -i * res + offsetZ;
+      const z1 = -(i + 1) * res + offsetZ;
+      const rTop0 = Math.min(rBoxTable[jTop], radii[i]);
+      const rTop1 = Math.min(rBoxTable[jTop], radii[i + 1]);
+      addEdgeLine(
+        [z0, rTop0 * cosTable[jTop] + offsetY, rTop0 * sinTable[jTop] + offsetX],
+        [z1, rTop1 * cosTable[jTop] + offsetY, rTop1 * sinTable[jTop] + offsetX]
+      );
+      const rBot0 = Math.min(rBoxTable[jBot], radii[i]);
+      const rBot1 = Math.min(rBoxTable[jBot], radii[i + 1]);
+      addEdgeLine(
+        [z0, rBot0 * cosTable[jBot] + offsetY, rBot0 * sinTable[jBot] + offsetX],
+        [z1, rBot1 * cosTable[jBot] + offsetY, rBot1 * sinTable[jBot] + offsetX]
+      );
+    }
+
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(UVs, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
     geo.setIndex(indices);
     geo.computeVertexNormals();
 
     this.stockMesh.geometry.dispose();
     this.stockMesh.geometry = geo;
+
+    // Update CAD Edge lines mesh for turning
+    if (!this.turnEdgesMesh) {
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x0a1d33, transparent: true, opacity: 0.90 });
+      this.turnEdgesMesh = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat);
+      this.scene.add(this.turnEdgesMesh);
+    }
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(L, 3));
+    this.turnEdgesMesh.geometry.dispose();
+    this.turnEdgesMesh.geometry = lineGeo;
+    this.turnEdgesMesh.visible = this.mode === 'turn';
+    if (this.millEdgesMesh) this.millEdgesMesh.visible = false;
   }
 
   updateMillMesh() {
@@ -866,6 +970,7 @@ export class CNCSimulator3D {
     this.millEdgesMesh.geometry.dispose();
     this.millEdgesMesh.geometry = lineGeo;
     this.millEdgesMesh.visible = this.mode === 'mill';
+    if (this.turnEdgesMesh) this.turnEdgesMesh.visible = false;
   }
 
   applyCut(step) {
