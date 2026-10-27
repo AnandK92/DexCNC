@@ -407,8 +407,8 @@ appContainer.innerHTML = `
 <div id="app-container">
   <!-- Title Bar -->
   <div class="window-titlebar">
-    <div class="title-text">
-      <span style="color:#ffd700;">⚙</span>
+    <div class="title-text" style="display:flex;align-items:center;gap:8px;">
+      <img src="/dexcnc-brand-logo.svg" alt="DexCNC" style="width:18px;height:18px;border-radius:4px;vertical-align:middle;object-fit:contain;box-shadow:0 0 6px rgba(0,242,254,0.4);" />
       <span id="win-title-text">Untitled.nc — DexCNC Turn (Fanuc 0i-T)</span>
     </div>
     <div class="win-btns">

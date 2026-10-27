@@ -8,6 +8,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 680,
     title: 'DexCNC Pro — CNC Turn & Mill Simulator',
+    icon: path.join(__dirname, '../public/dexcnc-logo-with-label.png'),
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,

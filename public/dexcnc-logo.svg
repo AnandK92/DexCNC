@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#141824"/>
+      <stop offset="50%" stop-color="#0b0e17"/>
+      <stop offset="100%" stop-color="#05070c"/>
+    </linearGradient>
+
+    <!-- Border Glow Gradient -->
+    <linearGradient id="borderGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#4facfe" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#ffb703" stop-opacity="0.6"/>
+    </linearGradient>
+
+    <!-- Titanium Metal Gradient -->
+    <linearGradient id="titanium" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="35%" stop-color="#94a3b8"/>
+      <stop offset="70%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+
+    <!-- Cyan Laser Toolpath -->
+    <linearGradient id="cyanLaser" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="100%" stop-color="#4facfe"/>
+    </linearGradient>
+
+    <!-- Amber Rapid Toolpath -->
+    <linearGradient id="amberGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fb8500"/>
+      <stop offset="100%" stop-color="#ffb703"/>
+    </linearGradient>
+
+    <!-- Neon Glow Filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- App Icon Squircle Container -->
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#bgGrad)" stroke="url(#borderGlow)" stroke-width="4"/>
+
+  <!-- Subtle CAD Grid Reticle -->
+  <g opacity="0.12" stroke="#4facfe" stroke-width="1.5">
+    <line x1="80" y1="256" x2="432" y2="256"/>
+    <line x1="256" y1="80" x2="256" y2="432"/>
+    <circle cx="256" cy="256" r="160" fill="none" stroke-dasharray="4,6"/>
+    <circle cx="256" cy="256" r="90" fill="none" stroke-dasharray="2,4"/>
+  </g>
+
+  <!-- Stylized Rotating Lathe Chuck Body & Spindle Center -->
+  <circle cx="256" cy="256" r="130" fill="none" stroke="url(#titanium)" stroke-width="14" stroke-linecap="round"/>
+  
+  <!-- Chuck Jaws (3-Jaw Scroll Chuck Representation) -->
+  <g fill="url(#titanium)">
+    <!-- Top Jaw -->
+    <rect x="244" y="90" width="24" height="48" rx="4"/>
+    <!-- Bottom Left Jaw -->
+    <rect x="108" y="310" width="24" height="48" rx="4" transform="rotate(-60 120 334)"/>
+    <!-- Bottom Right Jaw -->
+    <rect x="380" y="310" width="24" height="48" rx="4" transform="rotate(60 392 334)"/>
+  </g>
+
+  <!-- Glowing Toolpath Spiral (Helical Milling & Lathe Pass) -->
+  <path d="M 256 160 A 96 96 0 0 1 352 256 A 110 110 0 0 1 230 366" 
+        fill="none" stroke="url(#cyanLaser)" stroke-width="7" stroke-linecap="round" filter="url(#glow)"/>
+  
+  <path d="M 230 366 A 120 120 0 0 1 136 256 A 130 130 0 0 1 290 128" 
+        fill="none" stroke="url(#amberGlow)" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="8,8" filter="url(#glow)"/>
+
+  <!-- Central Precision End-Mill / Cutting Insert Tip -->
+  <g transform="translate(256,256)">
+    <!-- Flute Core -->
+    <path d="M -16 -60 L 16 -60 L 18 10 L 0 42 L -18 10 Z" fill="url(#titanium)" stroke="#0f172a" stroke-width="2"/>
+    <!-- Helical Flute Groove Cutting Edge -->
+    <path d="M -16 -40 Q 6 -20 18 0 Q -2 20 0 42" fill="none" stroke="url(#cyanLaser)" stroke-width="4" stroke-linecap="round" filter="url(#glow)"/>
+    <!-- Diamond Carbide Turning Insert Tip (Amber) -->
+    <polygon points="0,42 -12,24 0,10 12,24" fill="url(#amberGlow)"/>
+    <!-- Origin Center Crosshair G54 Point -->
+    <circle cx="0" cy="42" r="3.5" fill="#ffffff" filter="url(#glow)"/>
+  </g>
+
+  <!-- CNC Coordinate Triad Indicators (X, Z, Y) -->
+  <g font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="20">
+    <text x="400" y="246" fill="#00f2fe" opacity="0.9">X+</text>
+    <text x="268" y="100" fill="#ffb703" opacity="0.9">Z+</text>
+  </g>
+</svg>
