@@ -1,10 +1,10 @@
-# DexCNC Pro — CNC Turn & Mill 3D Simulator
+# DexCNC — CNC Turn & Mill 3D Simulator
 
 <p align="center">
-  <img src="public/dexcnc-logo-with-label.png" alt="DexCNC Pro Logo" width="240" />
+  <img src="public/dexcnc-logo-with-label.png" alt="DexCNC Logo" width="240" />
 </p>
 
-**DexCNC Pro** is a modern, high-precision 3D CNC simulator for **Turning (Lathe)** and **Milling** operations modeled after the **Fanuc Controller** standard. Built with WebGL/Three.js, Vite, and Electron, it offers realistic real-time material removal, toolpath verification, and interactive engineering blueprints.
+**DexCNC** is a modern, high-precision 3D CNC simulator for **Turning (Lathe)** and **Milling** operations modeled after the **Fanuc Controller** standard. Built with WebGL/Three.js, Vite, and Electron, it offers realistic real-time material removal, toolpath verification, and interactive engineering blueprints.
 
 ---
 

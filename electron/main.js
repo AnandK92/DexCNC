@@ -7,7 +7,7 @@ function createWindow() {
     height: 820,
     minWidth: 1024,
     minHeight: 680,
-    title: 'DexCNC Pro — CNC Turn & Mill Simulator',
+    title: 'DexCNC — CNC Turn & Mill Simulator',
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,

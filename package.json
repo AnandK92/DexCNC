@@ -2,7 +2,7 @@
   "name": "dexcnc",
   "productName": "DexCNC",
   "version": "1.0.0",
-  "description": "DexCNC Pro — CNC Turn & Mill Simulator (Fanuc Controller)",
+  "description": "DexCNC — CNC Turn & Mill Simulator (Fanuc Controller)",
   "private": true,
   "main": "electron/main.cjs",
   "type": "module",
@@ -38,7 +38,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DexCNC Pro"
+      "shortcutName": "DexCNC"
     },
     "portable": {
       "artifactName": "DexCNC_Portable_${version}.${ext}"
